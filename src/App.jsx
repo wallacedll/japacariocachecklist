@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 // SUPABASE CONFIG
 // ============================================================
 const SUPABASE_URL = "https://fiokvqtvmlnprsywhipj.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_36VZ47v8rPTxIqaqKm199g_IhKZla7r";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpb2t2cXR2bWxucHJzeXdoaXBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MDEzNTEsImV4cCI6MjA4NzM3NzM1MX0.BeWMR2qMqQadfkOz_yVMJ4Bj_zrTMtZCKM0CtKPvUAk";
 
 // Minimal Supabase client (no SDK needed)
 const supabase = {
