@@ -809,6 +809,9 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const [notification, setNotification] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editingTemplate, setEditingTemplate] = useState(null); // null = not editing, {} = new, {id:...} = editing existing
+  const [sectorsList, setSectorsList] = useState([]);
+  const [profilesList, setProfilesList] = useState([]);
 
   const notify = (msg, type = "success") => {
     setNotification({ msg, type });
@@ -822,6 +825,8 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         // Load lookup tables first
         const allSectors = await db.query("sectors", "id,name", { unit_id: `eq.${unit.id}` });
         const allProfiles = await db.query("profiles", "id,name,email,role,phone,active,created_at,sector_id", { unit_id: `eq.${unit.id}` });
+        setSectorsList(allSectors);
+        setProfilesList(allProfiles);
         const sectorMap = {};
         allSectors.forEach(s => { sectorMap[s.id] = s.name; });
         const profileMap = {};
@@ -1465,48 +1470,298 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   };
 
   // ---- TEMPLATES ----
-  const renderTemplates = () => (
-    <div className="animate-fade">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Modelos de Checklist</h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerencie os modelos da operação</p>
+  // ---- TEMPLATE EDITOR ----
+  const saveTemplate = async (tplData) => {
+    try {
+      const sectorId = sectorsList.find(s => s.name === tplData.sector)?.id;
+      if (!sectorId) { notify("Setor inválido", "error"); return; }
+
+      if (tplData.id) {
+        // Update existing template
+        await db.update("checklist_templates", { id: tplData.id }, {
+          title: tplData.title,
+          sector_id: sectorId,
+          moment: tplData.moment,
+          schedule: tplData.schedule,
+          frequency: tplData.frequency,
+          responsible_id: tplData.responsibleId || null,
+        });
+
+        // Delete old items and recreate
+        const oldItems = await db.query("template_items", "id", { template_id: `eq.${tplData.id}` });
+        for (const oi of oldItems) {
+          await supabase.fetch(`/rest/v1/template_items?id=eq.${oi.id}`, { method: "DELETE" });
+        }
+
+        // Insert new items
+        if (tplData.items.length > 0) {
+          await db.insert("template_items", tplData.items.map((item, idx) => ({
+            template_id: tplData.id,
+            text: item.text,
+            type: item.type,
+            required: item.required,
+            photo_required: item.photoRequired,
+            unit: item.unit || null,
+            min_value: item.min || null,
+            max_value: item.max || null,
+            sort_order: idx + 1,
+          })));
+        }
+        notify("✅ Modelo atualizado!");
+      } else {
+        // Create new template
+        const result = await db.insert("checklist_templates", {
+          title: tplData.title,
+          unit_id: unit.id,
+          sector_id: sectorId,
+          moment: tplData.moment,
+          schedule: tplData.schedule,
+          frequency: tplData.frequency,
+          responsible_id: tplData.responsibleId || null,
+          created_by: user.id,
+        });
+        const newTpl = result[0];
+
+        // Insert items
+        if (tplData.items.length > 0) {
+          await db.insert("template_items", tplData.items.map((item, idx) => ({
+            template_id: newTpl.id,
+            text: item.text,
+            type: item.type,
+            required: item.required,
+            photo_required: item.photoRequired,
+            unit: item.unit || null,
+            min_value: item.min || null,
+            max_value: item.max || null,
+            sort_order: idx + 1,
+          })));
+        }
+        notify("✅ Novo modelo criado!");
+      }
+
+      // Reload templates
+      setEditingTemplate(null);
+      setLoading(true);
+      const tplReload = await db.query("checklist_templates", "id,title,moment,schedule,frequency,active,sector_id,responsible_id", { active: "eq.true", unit_id: `eq.${unit.id}` });
+      const itemsReload = await db.query("template_items", "id,template_id,text,type,required,photo_required,unit,min_value,max_value,sort_order", { active: "eq.true", order: "sort_order.asc" });
+      const sectorMap = {}; sectorsList.forEach(s => { sectorMap[s.id] = s.name; });
+      const profileMap = {}; profilesList.forEach(p => { profileMap[p.id] = p.name; });
+      setTemplates(tplReload.map(t => ({
+        id: t.id, title: t.title, sector: sectorMap[t.sector_id] || "Gerência", moment: t.moment, active: t.active,
+        responsible: profileMap[t.responsible_id] || "Não atribuído", schedule: t.schedule?.slice(0, 5) || "09:00",
+        frequency: t.frequency, unit_id: unit.id,
+        items: itemsReload.filter(i => i.template_id === t.id).map(i => ({
+          id: i.id, text: i.text, type: i.type, required: i.required, photoRequired: i.photo_required,
+          unit: i.unit, min: i.min_value, max: i.max_value,
+        })),
+      })));
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      notify("Erro ao salvar modelo", "error");
+    }
+  };
+
+  const deleteTemplate = async (tplId) => {
+    if (!confirm("Tem certeza que deseja excluir este modelo?")) return;
+    try {
+      await db.update("checklist_templates", { id: tplId }, { active: false });
+      setTemplates(prev => prev.filter(t => t.id !== tplId));
+      notify("🗑️ Modelo excluído");
+    } catch (err) {
+      notify("Erro ao excluir", "error");
+    }
+  };
+
+  const renderTemplateEditor = () => {
+    const tpl = editingTemplate;
+
+    const updateEditField = (field, value) => {
+      setEditingTemplate(prev => ({ ...prev, [field]: value }));
+    };
+
+    const addItem = () => {
+      const newItems = [...(tpl.items || []), { id: `new-${Date.now()}`, text: "", type: "checkbox", required: true, photoRequired: false, unit: "", min: null, max: null }];
+      updateEditField("items", newItems);
+    };
+
+    const updateItem = (idx, field, value) => {
+      const newItems = (tpl.items || []).map((item, i) => i === idx ? { ...item, [field]: value } : item);
+      updateEditField("items", newItems);
+    };
+
+    const removeItem = (idx) => {
+      updateEditField("items", (tpl.items || []).filter((_, i) => i !== idx));
+    };
+
+    const items = tpl.items || [];
+
+    return (
+      <div className="animate-fade">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+          <div style={{ cursor: "pointer", padding: 8, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={() => setEditingTemplate(null)}>
+            <Icon name="back" size={20} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>{tpl?.id ? "Editar Modelo" : "Novo Modelo"}</h1>
+            <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Configure os detalhes e itens do checklist</p>
+          </div>
         </div>
-        {(user.role === "admin" || user.role === "manager") && (
-          <Btn variant="primary" onClick={() => notify("🚧 Editor de modelos em desenvolvimento")}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Modelo</Btn>
-        )}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-        {templates.map((t, i) => (
-          <Card key={t.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.05}s both` }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <Badge color={t.moment === "Abertura" ? "var(--accent)" : "var(--purple)"}>{t.moment}</Badge>
-              <Badge color="var(--info)">{t.sector}</Badge>
-            </div>
-            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{t.title}</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-              <div style={{ width: 20, height: 20, borderRadius: 6, background: "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Icon name="users" size={11} color="var(--accent)" />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+          <Card>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Informações</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <Input label="Título" value={tpl.title || ""} onChange={e => updateEditField("title", e.target.value)} placeholder="Ex: Abertura Cozinha" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Select label="Setor" options={SECTORS} value={tpl.sector || SECTORS[0]} onChange={e => updateEditField("sector", e.target.value)} />
+                <Select label="Momento" options={MOMENTS} value={tpl.moment || "Abertura"} onChange={e => updateEditField("moment", e.target.value)} />
               </div>
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Responsável: <strong style={{ color: "var(--text-primary)", fontWeight: 600 }}>{t.responsible.split(" ")[0]}</strong></span>
-            </div>
-            <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 14 }}>
-              {t.items.length} itens • {t.items.filter(i => i.required).length} obrigatórios • {t.items.filter(i => i.photoRequired).length} fotos
-            </p>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
-              ⏰ {t.schedule} • 📋 {t.frequency} • 👤 {t.responsible}
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {(user.role === "admin" || user.role === "manager") && (
-                <Btn size="sm" variant="ghost" onClick={() => notify("🚧 Editor em desenvolvimento")}><Icon name="edit" size={14} color="var(--accent)" /> Editar</Btn>
-              )}
-              <Btn size="sm" variant="ghost" onClick={() => startExecution(t.id)}><Icon name="play" size={14} color="var(--accent)" /> Executar</Btn>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Input label="Horário" type="time" value={tpl.schedule || "09:00"} onChange={e => updateEditField("schedule", e.target.value)} />
+                <Select label="Frequência" options={["Diário", "Semanal", "Mensal", "Pontual"]} value={tpl.frequency || "Diário"} onChange={e => updateEditField("frequency", e.target.value)} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "var(--text-secondary)" }}>Responsável</div>
+                <select value={tpl.responsibleId || ""} onChange={e => updateEditField("responsibleId", e.target.value)}
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", background: "var(--input-bg)", color: "var(--text-primary)", fontSize: 14 }}>
+                  <option value="">Selecione...</option>
+                  {profilesList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
             </div>
           </Card>
-        ))}
+
+          <Card>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Resumo</h3>
+            <div style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 2 }}>
+              <div>📋 <strong>{items.length}</strong> itens no total</div>
+              <div>✅ <strong>{items.filter(i => i.required).length}</strong> obrigatórios</div>
+              <div>📷 <strong>{items.filter(i => i.photoRequired).length}</strong> com foto</div>
+              <div>🔢 <strong>{items.filter(i => i.type === "numeric").length}</strong> numéricos</div>
+              <div>✔️ <strong>{items.filter(i => i.type === "yesno").length}</strong> sim/não</div>
+            </div>
+            <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+              <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => {
+                if (!(tpl.title || "").trim()) { notify("Preencha o título", "error"); return; }
+                if (items.length === 0) { notify("Adicione pelo menos 1 item", "error"); return; }
+                if (items.some(i => !i.text.trim())) { notify("Preencha todos os itens", "error"); return; }
+                saveTemplate({ id: tpl.id, title: tpl.title, sector: tpl.sector || SECTORS[0], moment: tpl.moment || "Abertura", schedule: tpl.schedule || "09:00", frequency: tpl.frequency || "Diário", responsibleId: tpl.responsibleId, items });
+              }}>
+                <Icon name="check" size={16} color="var(--btn-primary-text)" /> Salvar
+              </Btn>
+              <Btn variant="ghost" onClick={() => setEditingTemplate(null)}>Cancelar</Btn>
+            </div>
+          </Card>
+        </div>
+
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700 }}>Itens do Checklist</h3>
+            <Btn size="sm" variant="primary" onClick={addItem}><Icon name="add" size={14} color="var(--btn-primary-text)" /> Adicionar Item</Btn>
+          </div>
+
+          {items.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
+              Nenhum item ainda. Clique em "Adicionar Item" para começar.
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {items.map((item, idx) => (
+              <div key={item.id || idx} style={{
+                padding: 16, borderRadius: "var(--radius-md)", background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>{idx + 1}</div>
+                  <Input placeholder="Descrição do item..." value={item.text} onChange={e => updateItem(idx, "text", e.target.value)} style={{ flex: 1 }} />
+                  <div style={{ cursor: "pointer", padding: 6, borderRadius: 8 }} onClick={() => removeItem(idx)}>
+                    <Icon name="close" size={16} color="var(--danger)" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginLeft: 38, alignItems: "center" }}>
+                  <select value={item.type} onChange={e => updateItem(idx, "type", e.target.value)}
+                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--input-bg)", color: "var(--text-primary)", fontSize: 12 }}>
+                    <option value="checkbox">✅ Checkbox</option>
+                    <option value="numeric">🔢 Numérico</option>
+                    <option value="yesno">✔️ Sim/Não</option>
+                    <option value="observation">📝 Observação</option>
+                  </select>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={item.required} onChange={e => updateItem(idx, "required", e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Obrigatório
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+                    <input type="checkbox" checked={item.photoRequired} onChange={e => updateItem(idx, "photoRequired", e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Foto
+                  </label>
+                  {item.type === "numeric" && (
+                    <>
+                      <Input placeholder="Unidade" value={item.unit || ""} onChange={e => updateItem(idx, "unit", e.target.value)} style={{ width: 80, fontSize: 12 }} />
+                      <Input placeholder="Mín" type="number" value={item.min ?? ""} onChange={e => updateItem(idx, "min", e.target.value ? Number(e.target.value) : null)} style={{ width: 55, fontSize: 12 }} />
+                      <Input placeholder="Máx" type="number" value={item.max ?? ""} onChange={e => updateItem(idx, "max", e.target.value ? Number(e.target.value) : null)} style={{ width: 55, fontSize: 12 }} />
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const renderTemplates = () => {
+    if (editingTemplate !== null) return renderTemplateEditor();
+
+    return (
+      <div className="animate-fade">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Modelos de Checklist</h1>
+            <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerencie os modelos da operação — {templates.length} modelos ativos</p>
+          </div>
+          {(user.role === "admin" || user.role === "manager") && (
+            <Btn variant="primary" onClick={() => setEditingTemplate({})}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Modelo</Btn>
+          )}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+          {templates.map((t, i) => (
+            <Card key={t.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.05}s both` }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <Badge color={t.moment === "Abertura" ? "var(--accent)" : "var(--purple)"}>{t.moment}</Badge>
+                <Badge color="var(--info)">{t.sector}</Badge>
+              </div>
+              <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{t.title}</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                <div style={{ width: 20, height: 20, borderRadius: 6, background: "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Icon name="users" size={11} color="var(--accent)" />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Responsável: <strong style={{ color: "var(--text-primary)", fontWeight: 600 }}>{t.responsible.split(" ")[0]}</strong></span>
+              </div>
+              <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 14 }}>
+                {t.items.length} itens • {t.items.filter(i => i.required).length} obrigatórios • {t.items.filter(i => i.photoRequired).length} fotos
+              </p>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+                ⏰ {t.schedule} • 📋 {t.frequency} • 👤 {t.responsible}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {(user.role === "admin" || user.role === "manager") && (
+                  <>
+                    <Btn size="sm" variant="ghost" onClick={() => {
+                      const respId = profilesList.find(p => p.name === t.responsible)?.id || "";
+                      setEditingTemplate({ id: t.id, title: t.title, sector: t.sector, moment: t.moment, schedule: t.schedule, frequency: t.frequency, responsibleId: respId, items: t.items });
+                    }}><Icon name="edit" size={14} color="var(--accent)" /> Editar</Btn>
+                    <Btn size="sm" variant="ghost" onClick={() => deleteTemplate(t.id)}><Icon name="close" size={14} color="var(--danger)" /> Excluir</Btn>
+                  </>
+                )}
+                <Btn size="sm" variant="ghost" onClick={() => startExecution(t.id)}><Icon name="play" size={14} color="var(--accent)" /> Executar</Btn>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // ---- HISTORY ----
   const renderHistory = () => (
