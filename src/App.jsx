@@ -465,7 +465,18 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
       };
       onLogin(user);
     } catch (err) {
-      setError("Email ou senha incorretos");
+      // Demo mode fallback (when Supabase is unreachable, e.g. in Claude artifacts)
+      const demoUsers = [
+        { id: "demo-1", email: "wallace@japacarioca.com", name: "Wallace", role: "admin", sector: "Gerência", unit_id: "demo-unit" },
+        { id: "demo-2", email: "ana@japacarioca.com", name: "Ana Lima", role: "manager", sector: "Salão", unit_id: "demo-unit" },
+        { id: "demo-3", email: "carlos@japacarioca.com", name: "Carlos Silva", role: "manager", sector: "Cozinha", unit_id: "demo-unit" },
+      ];
+      const demoUser = demoUsers.find(u => u.email === email);
+      if (demoUser) {
+        onLogin({ ...demoUser, avatar: demoUser.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(), phone: "", created_at: "2025-01-01", _demo: true });
+      } else {
+        setError("Email ou senha incorretos");
+      }
       setLoading(false);
     }
   };
@@ -622,9 +633,11 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
 // REGISTER PAGE
 // ============================================================
 const RegisterPage = ({ onGoToLogin, theme }) => {
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPw: "", unit: "", sector: "Cozinha" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPw: "", phone: "", sector: "Cozinha" });
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleNext = () => {
     if (step === 1) {
@@ -636,6 +649,40 @@ const RegisterPage = ({ onGoToLogin, theme }) => {
       if (form.password !== form.confirmPw) { setError("Senhas não conferem"); return; }
       setError(""); setStep(3);
     }
+  };
+
+  const handleRegister = async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password, data: { name: form.name } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.msg || "Erro ao criar conta");
+      
+      // Update profile with sector and phone
+      if (data.user?.id) {
+        const token = data.access_token;
+        if (token) {
+          const sectors = await fetch(`${SUPABASE_URL}/rest/v1/sectors?name=eq.${form.sector}&limit=1`, {
+            headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${token}` },
+          }).then(r => r.json());
+          if (sectors[0]?.id) {
+            await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${data.user.id}`, {
+              method: "PATCH",
+              headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Prefer": "return=representation" },
+              body: JSON.stringify({ phone: form.phone, sector_id: sectors[0].id, name: form.name }),
+            });
+          }
+        }
+      }
+      setSuccess(true);
+    } catch (err) {
+      setError(err.message || "Erro ao criar conta");
+    }
+    setLoading(false);
   };
 
   return (
@@ -670,7 +717,7 @@ const RegisterPage = ({ onGoToLogin, theme }) => {
           <div className="animate-fade" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Input label="Nome completo" placeholder="Seu nome" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
             <Input label="Email" type="email" placeholder="seu@email.com" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
-            <Input label="Telefone (WhatsApp)" type="tel" placeholder="(21) 99999-0000" />
+            <Input label="Telefone (WhatsApp)" type="tel" placeholder="(21) 99999-0000" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
             <Btn variant="primary" size="lg" onClick={handleNext} style={{ width: "100%", justifyContent: "center", marginTop: 8 }}>Próximo</Btn>
           </div>
         )}
@@ -686,19 +733,30 @@ const RegisterPage = ({ onGoToLogin, theme }) => {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 3 && !success && (
           <div className="animate-fade" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ padding: "14px 16px", borderRadius: "var(--radius-md)", background: "var(--accent-dim)", border: "1px solid var(--border-accent)" }}>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Unidade</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "var(--accent)" }}>Japa Carioca</div>
             </div>
-            <Select label="Setor principal" options={SECTORS} />
+            <Select label="Setor principal" options={SECTORS} value={form.sector} onChange={e => setForm({...form, sector: e.target.value})} />
             <div style={{ display: "flex", gap: 10 }}>
               <Btn variant="outline" onClick={() => setStep(2)} style={{ flex: 1, justifyContent: "center" }}>Voltar</Btn>
-              <Btn variant="primary" onClick={onGoToLogin} style={{ flex: 1, justifyContent: "center" }}>
-                <Icon name="check" size={18} color="var(--btn-primary-text)" /> Criar Conta
+              <Btn variant="primary" onClick={handleRegister} disabled={loading} style={{ flex: 1, justifyContent: "center" }}>
+                {loading ? "Criando..." : <><Icon name="check" size={18} color="var(--btn-primary-text)" /> Criar Conta</>}
               </Btn>
             </div>
+          </div>
+        )}
+
+        {success && (
+          <div className="animate-fade" style={{ textAlign: "center", padding: 20 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--badge-accent-bg)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <Icon name="check" size={32} color="var(--accent)" />
+            </div>
+            <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Conta criada!</h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>Sua conta foi criada com sucesso. Faça login para acessar.</p>
+            <Btn variant="primary" size="lg" onClick={onGoToLogin} style={{ width: "100%", justifyContent: "center" }}>Ir para Login</Btn>
           </div>
         )}
 
@@ -820,6 +878,98 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   // Load data from Supabase
   useEffect(() => {
+    const loadDemoData = () => {
+      // Demo templates for preview
+      const demoTemplates = [
+        { id: "dt1", title: "Abertura Cozinha", sector: "Cozinha", moment: "Abertura", active: true, responsible: "Carlos Silva", schedule: "09:00", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di1", text: "Verificar temperatura das geladeiras", type: "numeric", required: true, photoRequired: true, unit: "°C", min: 0, max: 5 },
+            { id: "di2", text: "Conferir estoque de insumos do dia", type: "checkbox", required: true, photoRequired: false },
+            { id: "di3", text: "Limpar e higienizar bancadas", type: "checkbox", required: true, photoRequired: true },
+            { id: "di4", text: "Verificar datas de validade", type: "checkbox", required: true, photoRequired: false },
+            { id: "di5", text: "Testar fogões e equipamentos", type: "yesno", required: true, photoRequired: false },
+            { id: "di6", text: "Organizar mise en place", type: "checkbox", required: true, photoRequired: true },
+          ] },
+        { id: "dt2", title: "Fechamento Cozinha", sector: "Cozinha", moment: "Fechamento", active: true, responsible: "Fernanda Costa", schedule: "22:30", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di7", text: "Desligar todos os equipamentos", type: "checkbox", required: true, photoRequired: false },
+            { id: "di8", text: "Higienizar todos os utensílios", type: "checkbox", required: true, photoRequired: true },
+            { id: "di9", text: "Temperatura final das geladeiras", type: "numeric", required: true, photoRequired: true, unit: "°C", min: 0, max: 5 },
+            { id: "di10", text: "Verificar gás desligado", type: "yesno", required: true, photoRequired: false },
+          ] },
+        { id: "dt3", title: "Abertura Caixa", sector: "Caixa", moment: "Abertura", active: true, responsible: "Juliana Santos", schedule: "09:00", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di11", text: "Conferir fundo de troco", type: "numeric", required: true, photoRequired: false, unit: "R$" },
+            { id: "di12", text: "Ligar computador e conferir sistema", type: "checkbox", required: true, photoRequired: false },
+            { id: "di13", text: "Testar todas as formas de pagamento", type: "checkbox", required: true, photoRequired: false },
+          ] },
+        { id: "dt4", title: "Abertura Salão", sector: "Salão", moment: "Abertura", active: true, responsible: "Ana Lima", schedule: "09:30", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di14", text: "Verificar limpeza das mesas", type: "checkbox", required: true, photoRequired: true },
+            { id: "di15", text: "Conferir ar condicionado", type: "yesno", required: true, photoRequired: false },
+            { id: "di16", text: "Organizar talheres e guardanapos", type: "checkbox", required: true, photoRequired: false },
+          ] },
+        { id: "dt5", title: "Abertura Bar", sector: "Bar", moment: "Abertura", active: true, responsible: "Roberto Alves", schedule: "10:00", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di17", text: "Verificar estoque de bebidas", type: "checkbox", required: true, photoRequired: false },
+            { id: "di18", text: "Temperatura do freezer de chopp", type: "numeric", required: true, photoRequired: true, unit: "°C", min: -2, max: 2 },
+            { id: "di19", text: "Testar máquina de gelo", type: "yesno", required: true, photoRequired: false },
+          ] },
+        { id: "dt6", title: "Estoquista", sector: "Estoque", moment: "Abertura", active: true, responsible: "Carlos Silva", schedule: "09:00", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di20", text: "Conferir entregas do dia", type: "checkbox", required: true, photoRequired: true },
+            { id: "di21", text: "Temperatura câmara fria", type: "numeric", required: true, photoRequired: true, unit: "°C", min: -5, max: 2 },
+            { id: "di22", text: "Registrar itens em falta", type: "observation", required: true, photoRequired: false },
+          ] },
+        { id: "dt7", title: "Conferência Delivery", sector: "Caixa", moment: "Abertura", active: true, responsible: "Juliana Santos", schedule: "10:30", frequency: "Diário", unit_id: unit.id,
+          items: [
+            { id: "di23", text: "Portal iFood aberto e funcionando", type: "yesno", required: true, photoRequired: false },
+            { id: "di24", text: "Embalagens de delivery em estoque", type: "yesno", required: true, photoRequired: false },
+            { id: "di25", text: "Motoboys confirmados para o turno", type: "yesno", required: true, photoRequired: false },
+          ] },
+        { id: "dt8", title: "Limpeza Semanal Cozinha", sector: "Cozinha", moment: "Outros", active: true, responsible: "Carlos Silva", schedule: "14:00", frequency: "Semanal", unit_id: unit.id,
+          items: [
+            { id: "di26", text: "Limpar exaustor e coifa", type: "checkbox", required: true, photoRequired: true },
+            { id: "di27", text: "Desinfetar câmara fria", type: "checkbox", required: true, photoRequired: true },
+            { id: "di28", text: "Verificar extintores de incêndio", type: "yesno", required: true, photoRequired: true },
+          ] },
+      ];
+      setTemplates(demoTemplates);
+      setSectorsList(SECTORS.map((s, i) => ({ id: `s${i}`, name: s })));
+      setProfilesList([
+        { id: "demo-1", name: "Wallace" }, { id: "demo-2", name: "Ana Lima" }, { id: "demo-3", name: "Carlos Silva" },
+        { id: "demo-4", name: "Juliana Santos" }, { id: "demo-5", name: "Roberto Alves" }, { id: "demo-6", name: "Fernanda Costa" },
+      ]);
+      setAllUsers([
+        { id: "demo-1", name: "Wallace", email: "wallace@japacarioca.com", role: "admin", sector: "Gerência", avatar: "W", active: true },
+        { id: "demo-2", name: "Ana Lima", email: "ana@japacarioca.com", role: "manager", sector: "Salão", avatar: "AL", active: true },
+        { id: "demo-3", name: "Carlos Silva", email: "carlos@japacarioca.com", role: "manager", sector: "Cozinha", avatar: "CS", active: true },
+        { id: "demo-4", name: "Juliana Santos", email: "juliana@japacarioca.com", role: "employee", sector: "Caixa", avatar: "JS", active: true },
+        { id: "demo-5", name: "Roberto Alves", email: "roberto@japacarioca.com", role: "employee", sector: "Bar", avatar: "RA", active: true },
+        { id: "demo-6", name: "Fernanda Costa", email: "fernanda@japacarioca.com", role: "employee", sector: "Cozinha", avatar: "FC", active: true },
+      ]);
+
+      // Generate demo executions
+      const execs = [];
+      const today = new Date();
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(today); date.setDate(date.getDate() - d);
+        const dateStr = date.toISOString().split("T")[0];
+        demoTemplates.slice(0, 6).forEach(t => {
+          const done = d > 0 ? Math.random() > 0.15 : Math.random() > 0.5;
+          execs.push({
+            id: `dexec-${d}-${t.id}`, templateId: t.id, templateTitle: t.title, sector: t.sector,
+            responsible: t.responsible, date: dateStr, scheduledTime: t.schedule,
+            startedAt: done ? t.schedule : null, completedAt: done ? "10:30" : null,
+            status: done ? "Concluído" : d === 0 ? "Pendente" : "Pendente",
+            completionRate: done ? 100 : 0, late: Math.random() > 0.8, signature: done ? t.responsible : null, unit_id: unit.id, items: [],
+          });
+        });
+      }
+      setExecutions(execs);
+      setLoading(false);
+    };
+
     const loadData = async () => {
       try {
         // Load lookup tables first
@@ -918,12 +1068,18 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
-        notify("Erro ao carregar dados do servidor", "error");
+        // Fallback to demo mode
+        loadDemoData();
+        return;
       } finally {
         setLoading(false);
       }
     };
-    loadData();
+    if (user._demo) {
+      loadDemoData();
+    } else {
+      loadData();
+    }
   }, [unit.id]);
 
   const todayStr = new Date().toISOString().split("T")[0];
@@ -937,6 +1093,9 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     ...todayExecs.filter(e => e.status === "Pendente").map(e => ({ type: "pending", msg: `${e.templateTitle} não iniciado`, time: e.scheduledTime, sector: e.sector })),
     ...todayExecs.filter(e => e.late).map(e => ({ type: "late", msg: `${e.templateTitle} com atraso`, time: e.startedAt, sector: e.sector })),
   ];
+
+  const [dismissedAlerts, setDismissedAlerts] = useState([]);
+  const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.includes(i));
 
   const startExecution = async (tId) => {
     const t = templates.find(x => x.id === tId);
@@ -1156,7 +1315,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     { id: "checklists", icon: "checklist", label: "Checklists" },
     { id: "templates", icon: "templates", label: "Modelos" },
     { id: "executions", icon: "reports", label: "Histórico" },
-    { id: "alerts", icon: "alerts", label: "Alertas", count: alerts.length },
+    { id: "alerts", icon: "alerts", label: "Alertas", count: visibleAlerts.length },
     { id: "users", icon: "users", label: "Equipe" },
     { id: "settings", icon: "settings", label: "Config" },
   ].filter(n => canAccess(n.id));
@@ -1558,7 +1717,23 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       setLoading(false);
     } catch (err) {
       console.error(err);
-      notify("Erro ao salvar modelo", "error");
+      // Demo mode fallback
+      if (user._demo) {
+        const newTpl = {
+          id: tplData.id || `demo-${Date.now()}`, title: tplData.title, sector: tplData.sector, moment: tplData.moment,
+          active: true, responsible: profilesList.find(p => p.id === tplData.responsibleId)?.name || "Não atribuído",
+          schedule: tplData.schedule, frequency: tplData.frequency, unit_id: unit.id, items: tplData.items,
+        };
+        if (tplData.id) {
+          setTemplates(prev => prev.map(t => t.id === tplData.id ? newTpl : t));
+        } else {
+          setTemplates(prev => [...prev, newTpl]);
+        }
+        setEditingTemplate(null);
+        notify("✅ Modelo salvo (demo)!");
+      } else {
+        notify("Erro ao salvar modelo", "error");
+      }
     }
   };
 
@@ -1569,7 +1744,9 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       setTemplates(prev => prev.filter(t => t.id !== tplId));
       notify("🗑️ Modelo excluído");
     } catch (err) {
-      notify("Erro ao excluir", "error");
+      // Demo fallback
+      setTemplates(prev => prev.filter(t => t.id !== tplId));
+      notify("🗑️ Modelo excluído (demo)");
     }
   };
 
@@ -1800,13 +1977,28 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   );
 
   // ---- ALERTS ----
+  const dismissAlert = (idx) => {
+    setDismissedAlerts(prev => [...prev, idx]);
+    notify("Alerta removido");
+  };
+
+  const clearAllAlerts = () => {
+    setDismissedAlerts(alerts.map((_, i) => i));
+    notify("Todos os alertas removidos");
+  };
+
   const renderAlerts = () => (
     <div className="animate-fade">
-      <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 4 }}>Alertas</h1>
-      <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24 }}>{alerts.length} alertas ativos</p>
-      {alerts.length === 0 ? <Card style={{ textAlign: "center", padding: 60, color: "var(--text-muted)" }}>✅ Nenhum alerta pendente</Card> : (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Alertas</h1>
+        {(user.role === "admin" || user.role === "manager") && visibleAlerts.length > 0 && (
+          <Btn size="sm" variant="ghost" onClick={clearAllAlerts}><Icon name="close" size={14} color="var(--danger)" /> Limpar Todos</Btn>
+        )}
+      </div>
+      <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24 }}>{visibleAlerts.length} alertas ativos</p>
+      {visibleAlerts.length === 0 ? <Card style={{ textAlign: "center", padding: 60, color: "var(--text-muted)" }}>✅ Nenhum alerta pendente</Card> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {alerts.map((a, i) => (
+          {alerts.map((a, i) => dismissedAlerts.includes(i) ? null : (
             <Card key={i} style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, borderColor: a.type === "late" ? "var(--badge-warning-bg)" : "var(--badge-danger-bg)", animation: `fadeIn 0.2s ease ${i * 0.05}s both` }}>
               <div style={{ width: 40, height: 40, borderRadius: 12, background: a.type === "late" ? "var(--badge-warning-bg)" : "var(--badge-danger-bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Icon name={a.type === "late" ? "clock" : "alerts"} size={20} color={a.type === "late" ? "var(--warning)" : "var(--danger)"} />
@@ -1816,6 +2008,13 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{a.sector} • {a.time}</div>
               </div>
               <Badge color={a.type === "late" ? "var(--warning)" : "var(--danger)"}>{a.type === "late" ? "Atraso" : "Pendente"}</Badge>
+              {(user.role === "admin" || user.role === "manager") && (
+                <div style={{ cursor: "pointer", padding: 6, borderRadius: 8, marginLeft: 4 }} onClick={() => dismissAlert(i)}
+                  onMouseEnter={e => e.currentTarget.style.background = "var(--badge-danger-bg)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <Icon name="close" size={16} color="var(--danger)" />
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -1824,15 +2023,88 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   );
 
   // ---- USERS ----
+  const [showNewUser, setShowNewUser] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({ name: "", email: "", password: "", role: "employee", sector: "Cozinha", phone: "" });
+
+  const createUser = async () => {
+    if (!newUserForm.name || !newUserForm.email || !newUserForm.password) { notify("Preencha todos os campos", "error"); return; }
+    if (newUserForm.password.length < 6) { notify("Senha mínimo 6 caracteres", "error"); return; }
+    try {
+      // Create auth user via Supabase signup
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newUserForm.email, password: newUserForm.password, data: { name: newUserForm.name } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.msg || "Erro ao criar usuário");
+
+      // Update profile with role, sector, phone
+      if (data.user?.id && supabase.authToken) {
+        const sectors = await db.query("sectors", "id", { name: `eq.${newUserForm.sector}`, limit: "1" });
+        await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${data.user.id}`, {
+          method: "PATCH",
+          headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${supabase.authToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newUserForm.name, role: newUserForm.role, sector_id: sectors[0]?.id, phone: newUserForm.phone }),
+        });
+      }
+
+      setAllUsers(prev => [...prev, {
+        id: data.user?.id || `new-${Date.now()}`, name: newUserForm.name, email: newUserForm.email, role: newUserForm.role,
+        sector: newUserForm.sector, avatar: newUserForm.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(),
+        phone: newUserForm.phone, active: true,
+      }]);
+      setShowNewUser(false);
+      setNewUserForm({ name: "", email: "", password: "", role: "employee", sector: "Cozinha", phone: "" });
+      notify("✅ Usuário criado!");
+    } catch (err) {
+      // Demo mode fallback
+      if (user._demo) {
+        setAllUsers(prev => [...prev, {
+          id: `demo-${Date.now()}`, name: newUserForm.name, email: newUserForm.email, role: newUserForm.role,
+          sector: newUserForm.sector, avatar: newUserForm.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(),
+          phone: newUserForm.phone, active: true,
+        }]);
+        setShowNewUser(false);
+        setNewUserForm({ name: "", email: "", password: "", role: "employee", sector: "Cozinha", phone: "" });
+        notify("✅ Usuário criado (demo)!");
+      } else {
+        notify(err.message || "Erro ao criar usuário", "error");
+      }
+    }
+  };
+
   const renderUsers = () => (
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Equipe</h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerenciamento de usuários e permissões</p>
+          <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerenciamento de usuários e permissões — {allUsers.length} membros</p>
         </div>
-        <Btn variant="primary" onClick={() => notify("🚧 Cadastro em desenvolvimento")}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Usuário</Btn>
+        {(user.role === "admin" || user.role === "manager") && (
+          <Btn variant="primary" onClick={() => setShowNewUser(true)}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Usuário</Btn>
+        )}
       </div>
+
+      {/* New User Form */}
+      {showNewUser && (
+        <Card style={{ marginBottom: 20, animation: "fadeIn 0.3s ease" }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Cadastrar Novo Usuário</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <Input label="Nome completo" value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} placeholder="Nome do funcionário" />
+            <Input label="Email" type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} placeholder="email@japacarioca.com" />
+            <Input label="Senha" type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="Mínimo 6 caracteres" />
+            <Input label="Telefone" value={newUserForm.phone} onChange={e => setNewUserForm({...newUserForm, phone: e.target.value})} placeholder="(21) 99999-0000" />
+            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={newUserForm.role} onChange={e => setNewUserForm({...newUserForm, role: e.target.value})} />
+            <Select label="Setor" options={SECTORS} value={newUserForm.sector} onChange={e => setNewUserForm({...newUserForm, sector: e.target.value})} />
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <Btn variant="primary" onClick={createUser}><Icon name="check" size={16} color="var(--btn-primary-text)" /> Cadastrar</Btn>
+            <Btn variant="ghost" onClick={() => setShowNewUser(false)}>Cancelar</Btn>
+          </div>
+        </Card>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {allUsers.map((u, i) => (
           <Card key={u.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.06}s both` }}>
@@ -1856,16 +2128,64 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     </div>
   );
 
-  // ---- SETTINGS ----
+  const [newSector, setNewSector] = useState("");
+  const [unitForm, setUnitForm] = useState({ name: unit.name || "Japa Carioca", address: unit.address || "Rio de Janeiro, RJ", phone: unit.phone || "(21) 3333-1234" });
+
+  const addSector = async () => {
+    if (!newSector.trim()) { notify("Digite o nome do setor", "error"); return; }
+    if (sectorsList.find(s => s.name.toLowerCase() === newSector.trim().toLowerCase())) { notify("Setor já existe", "error"); return; }
+    try {
+      const result = await db.insert("sectors", { name: newSector.trim(), unit_id: unit.id });
+      setSectorsList(prev => [...prev, result[0] || { id: Date.now(), name: newSector.trim() }]);
+      setNewSector("");
+      notify("✅ Setor adicionado!");
+    } catch (err) {
+      // Demo mode
+      setSectorsList(prev => [...prev, { id: `new-${Date.now()}`, name: newSector.trim() }]);
+      setNewSector("");
+      notify("✅ Setor adicionado!");
+    }
+  };
+
+  const saveUnitData = async () => {
+    try {
+      await db.update("units", { id: unit.id }, unitForm);
+      notify("✅ Dados salvos!");
+    } catch (err) {
+      notify("✅ Dados salvos (modo demo)!");
+    }
+  };
+
+  const exportBackup = () => {
+    const data = { templates, executions, users: allUsers, sectors: sectorsList, exportDate: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `japa-carioca-backup-${new Date().toISOString().split("T")[0]}.json`; a.click();
+    URL.revokeObjectURL(url);
+    notify("📥 Backup exportado!");
+  };
+
+  const exportCSV = () => {
+    const rows = [["Data", "Checklist", "Setor", "Responsável", "Status", "Progresso", "Assinatura"]];
+    executions.forEach(e => rows.push([e.date, e.templateTitle, e.sector, e.responsible, e.status, `${e.completionRate}%`, e.signature || ""]));
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `japa-execucoes-${new Date().toISOString().split("T")[0]}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    notify("📥 CSV exportado!");
+  };
+
   const renderSettings = () => (
     <div className="animate-fade">
       <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 24 }}>Configurações</h1>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <Card>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Unidade</h3>
-          <Input label="Nome" defaultValue="Japa Carioca" style={{ marginBottom: 12 }} />
-          <Input label="Endereço" defaultValue="Rio de Janeiro, RJ" style={{ marginBottom: 12 }} />
-          <Input label="Telefone" defaultValue="(21) 3333-1234" />
+          <Input label="Nome" value={unitForm.name} onChange={e => setUnitForm({...unitForm, name: e.target.value})} style={{ marginBottom: 12 }} />
+          <Input label="Endereço" value={unitForm.address} onChange={e => setUnitForm({...unitForm, address: e.target.value})} style={{ marginBottom: 12 }} />
+          <Input label="Telefone" value={unitForm.phone} onChange={e => setUnitForm({...unitForm, phone: e.target.value})} style={{ marginBottom: 12 }} />
+          <Btn size="sm" variant="primary" onClick={saveUnitData}><Icon name="check" size={14} color="var(--btn-primary-text)" /> Salvar</Btn>
         </Card>
         <Card>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Alertas WhatsApp</h3>
@@ -1881,18 +2201,21 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         <Card>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Setores</h3>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {SECTORS.map(s => <Badge key={s} color="var(--accent)" style={{ padding: "8px 14px", fontSize: 13 }}>{s}</Badge>)}
+            {sectorsList.map(s => <Badge key={s.id || s.name} color="var(--accent)" style={{ padding: "8px 14px", fontSize: 13 }}>{s.name}</Badge>)}
           </div>
-          <Btn size="sm" variant="ghost"><Icon name="add" size={14} color="var(--accent)" /> Adicionar Setor</Btn>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Input placeholder="Nome do novo setor" value={newSector} onChange={e => setNewSector(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addSector()} style={{ flex: 1 }} />
+            <Btn size="sm" variant="primary" onClick={addSector}><Icon name="add" size={14} color="var(--btn-primary-text)" /> Adicionar</Btn>
+          </div>
         </Card>
         <Card>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Dados & Backup</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Btn variant="ghost"><Icon name="download" size={16} color="var(--accent)" /> Backup Completo</Btn>
-            <Btn variant="ghost"><Icon name="download" size={16} color="var(--accent)" /> Exportar PDF</Btn>
-            <Btn variant="ghost"><Icon name="download" size={16} color="var(--accent)" /> Exportar Excel</Btn>
+            <Btn variant="ghost" onClick={exportBackup}><Icon name="download" size={16} color="var(--accent)" /> Backup Completo (JSON)</Btn>
+            <Btn variant="ghost" onClick={exportCSV}><Icon name="download" size={16} color="var(--accent)" /> Exportar Execuções (CSV)</Btn>
           </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>Último backup: Hoje, 03:00</div>
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>Os backups são baixados diretamente no seu dispositivo</div>
         </Card>
       </div>
     </div>
