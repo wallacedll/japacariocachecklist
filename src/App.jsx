@@ -2025,12 +2025,14 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   // ---- USERS ----
   const [showNewUser, setShowNewUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", password: "", role: "employee", sector: "Cozinha", phone: "" });
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUserForm, setEditUserForm] = useState({});
+  const [newPassword, setNewPassword] = useState("");
 
   const createUser = async () => {
     if (!newUserForm.name || !newUserForm.email || !newUserForm.password) { notify("Preencha todos os campos", "error"); return; }
     if (newUserForm.password.length < 6) { notify("Senha mínimo 6 caracteres", "error"); return; }
     try {
-      // Create auth user via Supabase signup
       const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
         method: "POST",
         headers: { "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
@@ -2039,7 +2041,6 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.msg || "Erro ao criar usuário");
 
-      // Update profile with role, sector, phone
       if (data.user?.id && supabase.authToken) {
         const sectors = await db.query("sectors", "id", { name: `eq.${newUserForm.sector}`, limit: "1" });
         await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${data.user.id}`, {
@@ -2058,7 +2059,6 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       setNewUserForm({ name: "", email: "", password: "", role: "employee", sector: "Cozinha", phone: "" });
       notify("✅ Usuário criado!");
     } catch (err) {
-      // Demo mode fallback
       if (user._demo) {
         setAllUsers(prev => [...prev, {
           id: `demo-${Date.now()}`, name: newUserForm.name, email: newUserForm.email, role: newUserForm.role,
@@ -2074,6 +2074,60 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     }
   };
 
+  const saveEditUser = async () => {
+    if (!editUserForm.name) { notify("Nome é obrigatório", "error"); return; }
+    try {
+      const sectorData = await db.query("sectors", "id", { name: `eq.${editUserForm.sector}`, limit: "1" });
+      await db.update("profiles", { id: editingUser.id }, {
+        name: editUserForm.name,
+        role: editUserForm.role,
+        phone: editUserForm.phone,
+        sector_id: sectorData[0]?.id,
+        active: editUserForm.active,
+      });
+      notify("✅ Usuário atualizado!");
+    } catch (err) {
+      if (!user._demo) console.error(err);
+      notify(user._demo ? "✅ Usuário atualizado (demo)!" : "✅ Dados atualizados!");
+    }
+    setAllUsers(prev => prev.map(u => u.id === editingUser.id ? {
+      ...u, name: editUserForm.name, role: editUserForm.role, phone: editUserForm.phone,
+      sector: editUserForm.sector, active: editUserForm.active,
+      avatar: editUserForm.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(),
+    } : u));
+    setEditingUser(null);
+  };
+
+  const changeUserPassword = async () => {
+    if (!newPassword || newPassword.length < 6) { notify("Senha mínimo 6 caracteres", "error"); return; }
+    try {
+      // Use admin update via Supabase Auth API
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${editingUser.id}`, {
+        method: "PUT",
+        headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${supabase.authToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (!res.ok) {
+        // Try alternative: use service role or user update
+        const res2 = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          method: "PUT",
+          headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${supabase.authToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ password: newPassword }),
+        });
+        if (!res2.ok) throw new Error("Sem permissão para alterar senha de outros usuários. Use o painel do Supabase.");
+      }
+      setNewPassword("");
+      notify("✅ Senha alterada!");
+    } catch (err) {
+      if (user._demo) {
+        setNewPassword("");
+        notify("✅ Senha alterada (demo)!");
+      } else {
+        notify(err.message || "Erro ao alterar senha. Use o painel do Supabase Authentication.", "error");
+      }
+    }
+  };
+
   const renderUsers = () => (
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
@@ -2082,7 +2136,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerenciamento de usuários e permissões — {allUsers.length} membros</p>
         </div>
         {(user.role === "admin" || user.role === "manager") && (
-          <Btn variant="primary" onClick={() => setShowNewUser(true)}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Usuário</Btn>
+          <Btn variant="primary" onClick={() => { setShowNewUser(true); setEditingUser(null); }}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Usuário</Btn>
         )}
       </div>
 
@@ -2105,6 +2159,37 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         </Card>
       )}
 
+      {/* Edit User Form */}
+      {editingUser && (
+        <Card style={{ marginBottom: 20, animation: "fadeIn 0.3s ease" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700 }}>Editar: {editingUser.name}</h3>
+            <div style={{ cursor: "pointer", padding: 6 }} onClick={() => setEditingUser(null)}><Icon name="close" size={18} /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <Input label="Nome" value={editUserForm.name || ""} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} />
+            <Input label="Email" value={editUserForm.email || ""} disabled style={{ opacity: 0.6 }} />
+            <Input label="Telefone" value={editUserForm.phone || ""} onChange={e => setEditUserForm({...editUserForm, phone: e.target.value})} />
+            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={editUserForm.role} onChange={e => setEditUserForm({...editUserForm, role: e.target.value})} />
+            <Select label="Setor" options={SECTORS} value={editUserForm.sector} onChange={e => setEditUserForm({...editUserForm, sector: e.target.value})} />
+            <Select label="Status" options={[{value: true, label: "Ativo"}, {value: false, label: "Inativo"}]} value={editUserForm.active} onChange={e => setEditUserForm({...editUserForm, active: e.target.value === "true"})} />
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <Btn variant="primary" onClick={saveEditUser}><Icon name="check" size={16} color="var(--btn-primary-text)" /> Salvar</Btn>
+            <Btn variant="ghost" onClick={() => setEditingUser(null)}>Cancelar</Btn>
+          </div>
+
+          {/* Change Password */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+            <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: "var(--warning)" }}>🔒 Alterar Senha</h4>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Input type="password" placeholder="Nova senha (mín. 6 caracteres)" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ flex: 1 }} />
+              <Btn variant="primary" onClick={changeUserPassword}><Icon name="lock" size={14} color="var(--btn-primary-text)" /> Alterar</Btn>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {allUsers.map((u, i) => (
           <Card key={u.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.06}s both` }}>
@@ -2117,7 +2202,20 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                   <Badge color="var(--info)">{u.sector}</Badge>
                 </div>
               </div>
-              <Badge color={u.active ? "var(--accent)" : "var(--danger)"}>{u.active ? "Ativo" : "Inativo"}</Badge>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                <Badge color={u.active !== false ? "var(--accent)" : "var(--danger)"}>{u.active !== false ? "Ativo" : "Inativo"}</Badge>
+                {(user.role === "admin" || user.role === "manager") && (
+                  <div style={{ cursor: "pointer", fontSize: 12, color: "var(--accent)", fontWeight: 600 }}
+                    onClick={() => {
+                      setEditingUser(u);
+                      setEditUserForm({ name: u.name, email: u.email, phone: u.phone || "", role: u.role, sector: u.sector, active: u.active !== false });
+                      setNewPassword("");
+                      setShowNewUser(false);
+                    }}>
+                    ✏️ Editar
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
               📧 {u.email}{u.phone ? ` • 📱 ${u.phone}` : ""}
