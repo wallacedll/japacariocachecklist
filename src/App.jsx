@@ -324,6 +324,17 @@ const CSS = `
   [data-theme="light"] input, [data-theme="light"] select, [data-theme="light"] textarea { background: #f8f9fc !important; border-color: rgba(0,0,0,0.12) !important; color: #111827 !important; }
   [data-theme="light"] input::placeholder, [data-theme="light"] textarea::placeholder { color: #6b7280 !important; }
   [data-theme="dark"] table tr:hover td { background: rgba(45,212,165,0.04) !important; }
+
+  /* ===== MOBILE RESPONSIVE ===== */
+  @media (max-width: 768px) {
+    .mobile-grid-1 { grid-template-columns: 1fr !important; }
+    .desktop-only { display: none !important; }
+    table { font-size: 12px; }
+    table th, table td { padding: 8px 10px !important; }
+  }
+  @media (min-width: 769px) {
+    .mobile-only { display: none !important; }
+  }
 `;
 
 // ============================================================
@@ -500,8 +511,8 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
       <div style={{ position: "absolute", top: "-20%", right: "-10%", width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(64,224,176,0.06) 0%, transparent 70%)" }} />
       <div style={{ position: "absolute", bottom: "-20%", left: "-10%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(91,156,246,0.04) 0%, transparent 70%)" }} />
       
-      {/* Left Panel - Brand */}
-      <div style={{
+      {/* Left Panel - Brand (hidden on mobile) */}
+      <div className="desktop-only" style={{
         flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
         padding: "60px 80px", position: "relative", zIndex: 1,
         background: "linear-gradient(135deg, var(--bg-base) 0%, var(--bg-deep) 100%)",
@@ -544,8 +555,8 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
 
       {/* Right Panel - Login Form */}
       <div style={{
-        width: 480, display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "60px 50px", position: "relative", zIndex: 1,
+        width: "min(480px, 100%)", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: "40px min(50px, 6vw)", position: "relative", zIndex: 1,
       }}>
         <div className="animate-fade">
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 6, letterSpacing: "-0.02em" }}>Entrar</h2>
@@ -689,7 +700,7 @@ const RegisterPage = ({ onGoToLogin, theme }) => {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-deep)", position: "relative" }}>
       <div style={{ position: "absolute", top: "10%", left: "20%", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(64,224,176,0.04) 0%, transparent 70%)" }} />
       
-      <div className="animate-fade" style={{ width: 460, padding: "48px 44px", background: "var(--bg-base)", borderRadius: "var(--radius-xl)", border: "1px solid var(--border)" }}>
+      <div className="animate-fade" style={{ width: "min(460px, 94vw)", padding: "48px min(44px, 5vw)", background: "var(--bg-base)", borderRadius: "var(--radius-xl)", border: "1px solid var(--border)" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
           <div style={{ cursor: "pointer" }} onClick={onGoToLogin}><Icon name="back" size={22} color="var(--text-secondary)" /></div>
@@ -856,7 +867,30 @@ const UnitSelector = ({ user, onSelectUnit }) => (
 // ============================================================
 const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const [page, setPage] = useState("dashboard");
+  const [pageHistory, setPageHistory] = useState(["dashboard"]);
+  const navigateTo = (p) => { setPageHistory(prev => [...prev, p]); setPage(p); };
+  const goBack = () => {
+    if (pageHistory.length > 1) {
+      const newHist = pageHistory.slice(0, -1);
+      setPageHistory(newHist);
+      setPage(newHist[newHist.length - 1]);
+    } else { setPage("dashboard"); }
+  };
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false);
+      else setMobileMenuOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [templates, setTemplates] = useState([]);
   const [executions, setExecutions] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -1295,7 +1329,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       const final = { ...activeExec, status: "Concluído", completedAt: `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`, signature: user.name, completionRate: 100 };
       setExecutions(prev => [final, ...prev.filter(e => !(e.templateId === final.templateId && e.date === final.date))]);
       setActiveExec(null);
-      setPage("checklists");
+      navigateTo("checklists");
       notify("✅ Checklist finalizado com sucesso!");
     } catch (err) {
       console.error(err);
@@ -1335,12 +1369,12 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Visão geral da operação — Japa Carioca</p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16, marginBottom: 24 }}>
           {[
-            { label: "Conclusão", value: `${completionRate}%`, color: "var(--accent)", icon: "checklist", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); setPage("checklists"); } },
-            { label: "Concluídos", value: completedToday, sub: `de ${todayExecs.length}`, color: "var(--info)", icon: "check", action: () => { setFilterStatus("Concluído"); setFilterSector("Todos"); setPage("checklists"); } },
-            { label: "Pendentes", value: pendingToday, color: "var(--warning)", icon: "clock", action: () => { setFilterStatus("Pendente"); setFilterSector("Todos"); setPage("checklists"); } },
-            { label: "Atrasos", value: lateToday, color: "var(--danger)", icon: "warning", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); setPage("alerts"); } },
+            { label: "Conclusão", value: `${completionRate}%`, color: "var(--accent)", icon: "checklist", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); navigateTo("checklists"); } },
+            { label: "Concluídos", value: completedToday, sub: `de ${todayExecs.length}`, color: "var(--info)", icon: "check", action: () => { setFilterStatus("Concluído"); setFilterSector("Todos"); navigateTo("checklists"); } },
+            { label: "Pendentes", value: pendingToday, color: "var(--warning)", icon: "clock", action: () => { setFilterStatus("Pendente"); setFilterSector("Todos"); navigateTo("checklists"); } },
+            { label: "Atrasos", value: lateToday, color: "var(--danger)", icon: "warning", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); navigateTo("alerts"); } },
           ].map((s, i) => (
             <Card key={i} style={{ 
               borderColor: `${s.color}15`, animation: `fadeIn 0.3s ease ${i * 0.08}s both`,
@@ -1364,12 +1398,12 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 24 }}>
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: "var(--text-secondary)" }}>Conclusão por Setor</h3>
             {sectorData.map((s, i) => (
               <div key={s.sector} style={{ marginBottom: 14, animation: `fadeIn 0.3s ease ${i * 0.05}s both`, cursor: "pointer", padding: "6px 8px", borderRadius: 8, transition: "background 0.2s" }}
-                onClick={() => { setFilterSector(s.sector); setFilterStatus("Todos"); setPage("checklists"); }}
+                onClick={() => { setFilterSector(s.sector); setFilterStatus("Todos"); navigateTo("checklists"); }}
                 onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
@@ -1392,7 +1426,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                   cursor: "pointer",
                 }} onClick={() => { 
                   if (e.status === "Concluído") { 
-                    setFilterStatus("Concluído"); setFilterSector("Todos"); setPage("checklists"); 
+                    setFilterStatus("Concluído"); setFilterSector("Todos"); navigateTo("checklists"); 
                   } else { 
                     startExecution(e.templateId); 
                   } 
@@ -1438,7 +1472,10 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       <div className="animate-fade">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Meus Checklists{statusLabel}</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Meus Checklists{statusLabel}</h1>
+            </div>
             <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>
               {filterStatus !== "Todos" || filterSector !== "Todos" ? (
                 <span>{filtered.length} resultado{filtered.length !== 1 ? "s" : ""} filtrado{filtered.length !== 1 ? "s" : ""} 
@@ -1463,7 +1500,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           ]} value={filterStatus} onChange={e => setFilterStatus(e.target.value)} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
           {filtered.map((t, i) => {
             const exec = todayExecs.find(e => e.templateId === t.id);
             const status = exec?.status || "Pendente";
@@ -1523,7 +1560,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
     return (
       <div style={{ maxWidth: 720, margin: "0 auto" }} className="animate-fade">
-        <Btn variant="ghost" size="sm" onClick={() => { setActiveExec(null); setPage("checklists"); }} style={{ marginBottom: 16 }}>
+        <Btn variant="ghost" size="sm" onClick={() => { setActiveExec(null); navigateTo("checklists"); }} style={{ marginBottom: 16 }}>
           <Icon name="back" size={16} color="var(--accent)" /> Voltar
         </Btn>
 
@@ -1622,7 +1659,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           <Btn variant="primary" size="lg" onClick={finalizeExecution}>
             <Icon name="check" size={18} color="var(--btn-primary-text)" /> Finalizar e Assinar
           </Btn>
-          <Btn variant="outline" onClick={() => { setActiveExec(null); setPage("checklists"); }}>Salvar Rascunho</Btn>
+          <Btn variant="outline" onClick={() => { setActiveExec(null); navigateTo("checklists"); }}>Salvar Rascunho</Btn>
         </div>
       </div>
     );
@@ -1785,16 +1822,16 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 24 }}>
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Informações</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <Input label="Título" value={tpl.title || ""} onChange={e => updateEditField("title", e.target.value)} placeholder="Ex: Abertura Cozinha" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                 <Select label="Setor" options={SECTORS} value={tpl.sector || SECTORS[0]} onChange={e => updateEditField("sector", e.target.value)} />
                 <Select label="Momento" options={MOMENTS} value={tpl.moment || "Abertura"} onChange={e => updateEditField("moment", e.target.value)} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                 <Input label="Horário" type="time" value={tpl.schedule || "09:00"} onChange={e => updateEditField("schedule", e.target.value)} />
                 <Select label="Frequência" options={["Diário", "Semanal", "Mensal", "Pontual"]} value={tpl.frequency || "Diário"} onChange={e => updateEditField("frequency", e.target.value)} />
               </div>
@@ -1894,14 +1931,17 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       <div className="animate-fade">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Modelos de Checklist</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Modelos de Checklist</h1>
+            </div>
             <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerencie os modelos da operação — {templates.length} modelos ativos</p>
           </div>
           {(user.role === "admin" || user.role === "manager") && (
             <Btn variant="primary" onClick={() => setEditingTemplate({})}><Icon name="add" size={16} color="var(--btn-primary-text)" /> Novo Modelo</Btn>
           )}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
           {templates.map((t, i) => (
             <Card key={t.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.05}s both` }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
@@ -1945,7 +1985,10 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Histórico</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Histórico</h1>
+          </div>
           <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Registros completos com evidência</p>
         </div>
         <Btn variant="ghost" onClick={() => notify("📥 Exportação em desenvolvimento")}><Icon name="download" size={16} color="var(--accent)" /> Exportar</Btn>
@@ -1990,7 +2033,10 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const renderAlerts = () => (
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Alertas</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Alertas</h1>
+        </div>
         {(user.role === "admin" || user.role === "manager") && visibleAlerts.length > 0 && (
           <Btn size="sm" variant="ghost" onClick={clearAllAlerts}><Icon name="close" size={14} color="var(--danger)" /> Limpar Todos</Btn>
         )}
@@ -2132,7 +2178,10 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     <div className="animate-fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Equipe</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Equipe</h1>
+          </div>
           <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gerenciamento de usuários e permissões — {allUsers.length} membros</p>
         </div>
         {(user.role === "admin" || user.role === "manager") && (
@@ -2144,7 +2193,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       {showNewUser && (
         <Card style={{ marginBottom: 20, animation: "fadeIn 0.3s ease" }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Cadastrar Novo Usuário</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
             <Input label="Nome completo" value={newUserForm.name} onChange={e => setNewUserForm({...newUserForm, name: e.target.value})} placeholder="Nome do funcionário" />
             <Input label="Email" type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} placeholder="email@japacarioca.com" />
             <Input label="Senha" type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="Mínimo 6 caracteres" />
@@ -2166,7 +2215,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             <h3 style={{ fontSize: 16, fontWeight: 700 }}>Editar: {editingUser.name}</h3>
             <div style={{ cursor: "pointer", padding: 6 }} onClick={() => setEditingUser(null)}><Icon name="close" size={18} /></div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
             <Input label="Nome" value={editUserForm.name || ""} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} />
             <Input label="Email" value={editUserForm.email || ""} disabled style={{ opacity: 0.6 }} />
             <Input label="Telefone" value={editUserForm.phone || ""} onChange={e => setEditUserForm({...editUserForm, phone: e.target.value})} />
@@ -2190,7 +2239,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         </Card>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {allUsers.map((u, i) => (
           <Card key={u.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.06}s both` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -2276,8 +2325,11 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   const renderSettings = () => (
     <div className="animate-fade">
-      <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 24 }}>Configurações</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+        <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>Configurações</h1>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20 }}>
         <Card>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Unidade</h3>
           <Input label="Nome" value={unitForm.name} onChange={e => setUnitForm({...unitForm, name: e.target.value})} style={{ marginBottom: 12 }} />
@@ -2340,106 +2392,246 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     }
   };
 
+  // Mobile nav handler
+  const mobileNav = (p) => { navigateTo(p); setMobileMenuOpen(false); setActiveExec(null); if (p !== "checklists") { setFilterStatus("Todos"); setFilterSector("Todos"); setSearchTerm(""); } };
+
+  // Bottom nav items for mobile (5 max)
+  const bottomNavItems = [
+    { id: "dashboard", icon: "dashboard", label: "Início" },
+    { id: "checklists", icon: "checklists", label: "Checklists" },
+    { id: "templates", icon: "templates", label: "Modelos" },
+    { id: "alerts", icon: "alerts", label: "Alertas", count: visibleAlerts.length },
+    { id: "more", icon: "menu", label: "Mais" },
+  ];
+
+  // "More" menu items
+  const moreMenuItems = [
+    { id: "history", icon: "history", label: "Histórico" },
+    { id: "users", icon: "users", label: "Equipe" },
+    { id: "settings", icon: "settings", label: "Configurações" },
+  ];
+
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-      {/* SIDEBAR */}
-      <div style={{
-        width: sidebarOpen ? 260 : 68, minWidth: sidebarOpen ? 260 : 68,
-        background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)",
-        display: "flex", flexDirection: "column", transition: "all 0.3s ease",
-      }}>
-        <div style={{ padding: sidebarOpen ? "20px 18px" : "20px 14px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--border)" }}>
-          <JapaLogo size={40} theme={theme} />
-          {sidebarOpen && <div><div style={{ fontWeight: 800, fontSize: 15 }}>Japa Carioca</div><div style={{ fontSize: 11, color: "var(--text-muted)" }}>Gestão de Checklists</div></div>}
-        </div>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden", flexDirection: isMobile ? "column" : "row" }}>
 
-        <div style={{ flex: 1, padding: "10px 0", overflowY: "auto" }}>
-          {navItems.map(n => (
-            <div key={n.id} onClick={() => { setPage(n.id); setActiveExec(null); if (n.id !== "checklists") { setFilterStatus("Todos"); setFilterSector("Todos"); setSearchTerm(""); } }}
-              style={{
-                display: "flex", alignItems: "center", gap: 13,
-                padding: sidebarOpen ? "11px 18px" : "11px 22px",
-                margin: "2px 6px", borderRadius: 10, cursor: "pointer",
-                background: (page === n.id || (page === "execute" && n.id === "checklists")) ? "var(--accent-dim)" : "transparent",
-                color: (page === n.id || (page === "execute" && n.id === "checklists")) ? "var(--accent)" : "var(--text-secondary)",
-                fontWeight: (page === n.id || (page === "execute" && n.id === "checklists")) ? 600 : 400,
-                fontSize: 14, transition: "all 0.2s", whiteSpace: "nowrap",
-                border: (page === n.id || (page === "execute" && n.id === "checklists")) ? "1px solid var(--border-accent)" : "1px solid transparent",
-              }}>
-              <Icon name={n.icon} size={19} />
-              {sidebarOpen && <span style={{ flex: 1 }}>{n.label}</span>}
-              {sidebarOpen && n.count > 0 && <span style={{ background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{n.count}</span>}
+      {/* ===== DESKTOP SIDEBAR ===== */}
+      {!isMobile && (
+        <div style={{
+          width: sidebarOpen ? 260 : 68, minWidth: sidebarOpen ? 260 : 68,
+          background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)",
+          display: "flex", flexDirection: "column", transition: "all 0.3s ease",
+        }}>
+          <div style={{ padding: sidebarOpen ? "20px 18px" : "20px 14px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--border)" }}>
+            <JapaLogo size={40} theme={theme} />
+            {sidebarOpen && <div><div style={{ fontWeight: 800, fontSize: 15 }}>Japa Carioca</div><div style={{ fontSize: 11, color: "var(--text-muted)" }}>Gestão de Checklists</div></div>}
+          </div>
+
+          <div style={{ flex: 1, padding: "10px 0", overflowY: "auto" }}>
+            {navItems.map(n => (
+              <div key={n.id} onClick={() => { navigateTo(n.id); setActiveExec(null); if (n.id !== "checklists") { setFilterStatus("Todos"); setFilterSector("Todos"); setSearchTerm(""); } }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 13,
+                  padding: sidebarOpen ? "11px 18px" : "11px 22px",
+                  margin: "2px 6px", borderRadius: 10, cursor: "pointer",
+                  background: (page === n.id || (page === "execute" && n.id === "checklists")) ? "var(--accent-dim)" : "transparent",
+                  color: (page === n.id || (page === "execute" && n.id === "checklists")) ? "var(--accent)" : "var(--text-secondary)",
+                  fontWeight: (page === n.id || (page === "execute" && n.id === "checklists")) ? 600 : 400,
+                  fontSize: 14, transition: "all 0.2s", whiteSpace: "nowrap",
+                  border: (page === n.id || (page === "execute" && n.id === "checklists")) ? "1px solid var(--border-accent)" : "1px solid transparent",
+                }}>
+                <Icon name={n.icon} size={19} />
+                {sidebarOpen && <span style={{ flex: 1 }}>{n.label}</span>}
+                {sidebarOpen && n.count > 0 && <span style={{ background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>{n.count}</span>}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding: "12px 6px", borderTop: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, cursor: "pointer", color: "var(--text-muted)", fontSize: 13 }} onClick={() => setSidebarOpen(!sidebarOpen)}>
+              <Icon name="menu" size={18} />
+              {sidebarOpen && <span>Recolher</span>}
             </div>
-          ))}
-        </div>
-
-        <div style={{ padding: "12px 6px", borderTop: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, cursor: "pointer", color: "var(--text-muted)", fontSize: 13 }} onClick={() => setSidebarOpen(!sidebarOpen)}>
-            <Icon name="menu" size={18} />
-            {sidebarOpen && <span>Recolher</span>}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* MAIN */}
+      {/* ===== MAIN CONTENT ===== */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* TOP BAR */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 28px", borderBottom: "1px solid var(--border)", background: "var(--topbar-bg)", backdropFilter: "blur(12px)" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-secondary)" }}>
-            {navItems.find(n => n.id === page)?.label || (page === "execute" ? "Executar Checklist" : "")}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* Theme Toggle */}
-            <div onClick={onToggleTheme} style={{
-              width: 40, height: 40, borderRadius: 12, cursor: "pointer",
-              background: "var(--toggle-bg)", border: "1px solid var(--border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.3s ease", position: "relative", overflow: "hidden",
-            }}>
-              <div key={theme} className="theme-switch-anim">
-                <Icon name={theme === "dark" ? "sun" : "moon"} size={18} color={theme === "dark" ? "var(--warning)" : "var(--accent)"} />
-              </div>
-            </div>
 
-            <div style={{ position: "relative", cursor: "pointer", padding: 6 }} onClick={() => setPage("alerts")}>
-              <Icon name="alerts" size={20} color="var(--text-muted)" />
-              {alerts.length > 0 && <div style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%", background: "var(--danger)" }} />}
-            </div>
-            <div style={{ position: "relative" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 12px", borderRadius: 10, background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-                onClick={() => setShowUserMenu(!showUserMenu)}>
-                <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--success))", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "var(--logo-text)" }}>{user.avatar}</div>
-                <div><div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 11, color: "var(--text-muted)" }}>{ROLE_LABELS[user.role]}</div></div>
-                <Icon name="expand" size={16} color="var(--text-muted)" />
+        {/* TOP BAR */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: isMobile ? "10px 16px" : "12px 28px",
+          borderBottom: "1px solid var(--border)", background: "var(--topbar-bg)", backdropFilter: "blur(12px)",
+        }}>
+          {isMobile ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <JapaLogo size={32} theme={theme} />
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Japa Carioca</div>
               </div>
-              {showUserMenu && (
-                <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 6, background: "var(--bg-surface)", border: "1px solid var(--border-accent)", borderRadius: 12, padding: 6, minWidth: 200, zIndex: 100, boxShadow: "var(--shadow-lg)" }}>
-                  <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                    {user.email}
-                  </div>
-                  <div style={{ padding: "10px 14px", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--danger)" }}
-                    onClick={onLogout} onMouseEnter={e => e.currentTarget.style.background = "var(--badge-danger-bg)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <Icon name="logout" size={16} color="var(--danger)" /> Sair
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div onClick={onToggleTheme} style={{
+                  width: 36, height: 36, borderRadius: 10, cursor: "pointer",
+                  background: "var(--toggle-bg)", border: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <div key={theme} className="theme-switch-anim">
+                    <Icon name={theme === "dark" ? "sun" : "moon"} size={16} color={theme === "dark" ? "var(--warning)" : "var(--accent)"} />
                   </div>
                 </div>
-              )}
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--success))", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "var(--logo-text)", cursor: "pointer" }}
+                  onClick={() => setShowUserMenu(!showUserMenu)}>
+                  {user.avatar}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-secondary)" }}>
+                {navItems.find(n => n.id === page)?.label || (page === "execute" ? "Executar Checklist" : "")}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div onClick={onToggleTheme} style={{
+                  width: 40, height: 40, borderRadius: 12, cursor: "pointer",
+                  background: "var(--toggle-bg)", border: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.3s ease", position: "relative", overflow: "hidden",
+                }}>
+                  <div key={theme} className="theme-switch-anim">
+                    <Icon name={theme === "dark" ? "sun" : "moon"} size={18} color={theme === "dark" ? "var(--warning)" : "var(--accent)"} />
+                  </div>
+                </div>
+                <div style={{ position: "relative", cursor: "pointer", padding: 6 }} onClick={() => navigateTo("alerts")}>
+                  <Icon name="alerts" size={20} color="var(--text-muted)" />
+                  {visibleAlerts.length > 0 && <div style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%", background: "var(--danger)" }} />}
+                </div>
+                <div style={{ position: "relative" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 12px", borderRadius: 10, background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+                    onClick={() => setShowUserMenu(!showUserMenu)}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--success))", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "var(--logo-text)" }}>{user.avatar}</div>
+                    <div><div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 11, color: "var(--text-muted)" }}>{ROLE_LABELS[user.role]}</div></div>
+                    <Icon name="expand" size={16} color="var(--text-muted)" />
+                  </div>
+                  {showUserMenu && (
+                    <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 6, background: "var(--bg-surface)", border: "1px solid var(--border-accent)", borderRadius: 12, padding: 6, minWidth: 200, zIndex: 100, boxShadow: "var(--shadow-lg)" }}>
+                      <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                        {user.email}
+                      </div>
+                      <div style={{ padding: "10px 14px", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--danger)" }}
+                        onClick={onLogout} onMouseEnter={e => e.currentTarget.style.background = "var(--badge-danger-bg)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <Icon name="logout" size={16} color="var(--danger)" /> Sair
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+          {/* Mobile user menu dropdown */}
+          {isMobile && showUserMenu && (
+            <div style={{ position: "absolute", top: 56, right: 12, background: "var(--bg-surface)", border: "1px solid var(--border-accent)", borderRadius: 12, padding: 6, minWidth: 200, zIndex: 100, boxShadow: "var(--shadow-lg)" }}>
+              <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-primary)", fontWeight: 600, borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                {user.name} • {ROLE_LABELS[user.role]}
+              </div>
+              <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                {user.email}
+              </div>
+              <div style={{ padding: "10px 14px", borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--danger)" }}
+                onClick={onLogout}>
+                <Icon name="logout" size={16} color="var(--danger)" /> Sair
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* CONTENT */}
-        <div style={{ flex: 1, overflow: "auto", padding: "24px 28px", background: "var(--content-gradient)" }}>
+        <div style={{
+          flex: 1, overflow: "auto",
+          padding: isMobile ? "16px 14px 90px 14px" : "24px 28px",
+          background: "var(--content-gradient)",
+        }}>
           {renderPage()}
         </div>
       </div>
 
+      {/* ===== MOBILE BOTTOM NAV ===== */}
+      {isMobile && (
+        <>
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 90,
+            background: "var(--sidebar-bg)", borderTop: "1px solid var(--border)",
+            display: "flex", alignItems: "center", justifyContent: "space-around",
+            padding: "6px 0 env(safe-area-inset-bottom, 8px) 0",
+            backdropFilter: "blur(16px)",
+          }}>
+            {bottomNavItems.map(n => {
+              const isActive = n.id === "more"
+                ? mobileMenuOpen
+                : (page === n.id || (page === "execute" && n.id === "checklists"));
+              return (
+                <div key={n.id} onClick={() => {
+                  if (n.id === "more") { setMobileMenuOpen(!mobileMenuOpen); }
+                  else { mobileNav(n.id); setMobileMenuOpen(false); }
+                }}
+                  style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                    padding: "6px 12px", borderRadius: 12, cursor: "pointer", position: "relative",
+                    color: isActive ? "var(--accent)" : "var(--text-muted)",
+                    transition: "all 0.2s",
+                  }}>
+                  <Icon name={n.icon} size={22} color={isActive ? "var(--accent)" : "var(--text-muted)"} />
+                  <span style={{ fontSize: 10, fontWeight: isActive ? 700 : 500 }}>{n.label}</span>
+                  {n.count > 0 && (
+                    <div style={{ position: "absolute", top: 2, right: 6, width: 16, height: 16, borderRadius: "50%", background: "var(--danger)", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{n.count}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* "More" menu popup */}
+          {mobileMenuOpen && (
+            <div style={{
+              position: "fixed", bottom: 70, left: 8, right: 8, zIndex: 89,
+              background: "var(--bg-surface)", border: "1px solid var(--border-accent)",
+              borderRadius: 16, padding: 8, boxShadow: "var(--shadow-lg)",
+              animation: "fadeIn 0.2s ease",
+            }}>
+              {moreMenuItems.map(n => (
+                <div key={n.id} onClick={() => mobileNav(n.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
+                    borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 500,
+                    color: page === n.id ? "var(--accent)" : "var(--text-primary)",
+                    background: page === n.id ? "var(--accent-dim)" : "transparent",
+                  }}>
+                  <Icon name={n.icon} size={20} color={page === n.id ? "var(--accent)" : "var(--text-secondary)"} />
+                  {n.label}
+                </div>
+              ))}
+              <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+              <div onClick={onLogout}
+                style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 500, color: "var(--danger)" }}>
+                <Icon name="logout" size={20} color="var(--danger)" /> Sair
+              </div>
+            </div>
+          )}
+
+          {/* Overlay to close more menu */}
+          {mobileMenuOpen && (
+            <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 70, zIndex: 88, background: "rgba(0,0,0,0.3)" }} />
+          )}
+        </>
+      )}
+
       {/* NOTIFICATION */}
       {notification && (
         <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 1000,
+          position: "fixed", bottom: isMobile ? 80 : 24, right: isMobile ? 14 : 24, left: isMobile ? 14 : "auto", zIndex: 1000,
           padding: "14px 24px", borderRadius: "var(--radius-md)",
           background: notification.type === "error" ? "var(--danger)" : "var(--accent)",
-          color: "#fff",
+          color: "#fff", textAlign: "center",
           fontWeight: 600, fontSize: 14, boxShadow: "var(--shadow-lg)",
           animation: "notifIn 0.3s ease",
         }}>{notification.msg}</div>
