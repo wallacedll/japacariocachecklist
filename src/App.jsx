@@ -493,7 +493,7 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg-deep)", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: window.innerWidth < 768 ? "column" : "row", background: "var(--bg-deep)", position: "relative", overflowY: "auto", overflowX: "hidden" }}>
       {/* Theme toggle on login */}
       <div onClick={onToggleTheme} style={{
         position: "absolute", top: 20, right: 20, zIndex: 10,
@@ -555,8 +555,9 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
 
       {/* Right Panel - Login Form */}
       <div style={{
-        width: "min(480px, 100%)", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "40px min(50px, 6vw)", position: "relative", zIndex: 1,
+        width: window.innerWidth < 768 ? "100%" : "min(480px, 100%)", flex: window.innerWidth < 768 ? "none" : 1,
+        display: "flex", flexDirection: "column", justifyContent: window.innerWidth < 768 ? "flex-start" : "center",
+        padding: window.innerWidth < 768 ? "30px 24px 40px" : "40px min(50px, 6vw)", position: "relative", zIndex: 1,
       }}>
         <div className="animate-fade">
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 6, letterSpacing: "-0.02em" }}>Entrar</h2>
