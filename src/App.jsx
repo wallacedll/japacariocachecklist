@@ -512,7 +512,8 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
       <div style={{ position: "absolute", bottom: "-20%", left: "-10%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(91,156,246,0.04) 0%, transparent 70%)" }} />
       
       {/* Left Panel - Brand (hidden on mobile) */}
-      <div className="desktop-only" style={{
+      {window.innerWidth >= 768 && (
+      <div style={{
         flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
         padding: "60px 80px", position: "relative", zIndex: 1,
         background: "linear-gradient(135deg, var(--bg-base) 0%, var(--bg-deep) 100%)",
@@ -552,13 +553,25 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
           </div>
         </div>
       </div>
+      )}
 
       {/* Right Panel - Login Form */}
       <div style={{
         width: window.innerWidth < 768 ? "100%" : "min(480px, 100%)", flex: window.innerWidth < 768 ? "none" : 1,
         display: "flex", flexDirection: "column", justifyContent: window.innerWidth < 768 ? "flex-start" : "center",
-        padding: window.innerWidth < 768 ? "30px 24px 40px" : "40px min(50px, 6vw)", position: "relative", zIndex: 1,
+        padding: window.innerWidth < 768 ? "20px 20px 40px" : "40px min(50px, 6vw)", position: "relative", zIndex: 1,
+        minHeight: window.innerWidth < 768 ? "100vh" : "auto",
       }}>
+        {/* Mobile logo header */}
+        {window.innerWidth < 768 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32, justifyContent: "center" }}>
+            <JapaLogo size={44} theme={theme} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: "-0.03em" }}>Japa Carioca</div>
+              <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Sistema de Checklists</div>
+            </div>
+          </div>
+        )}
         <div className="animate-fade">
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 6, letterSpacing: "-0.02em" }}>Entrar</h2>
           <p style={{ color: "var(--text-secondary)", fontSize: 15, marginBottom: 36 }}>Acesse sua conta para gerenciar a operação</p>
