@@ -923,14 +923,6 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const closeMenus = (e) => {
-      if (showUserMenu && !e.target.closest('[data-user-menu]')) setShowUserMenu(false);
-    };
-    document.addEventListener("click", closeMenus);
-    return () => document.removeEventListener("click", closeMenus);
-  }, [showUserMenu]);
-
-  useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
@@ -954,6 +946,14 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const [editingTemplate, setEditingTemplate] = useState(null); // null = not editing, {} = new, {id:...} = editing existing
   const [sectorsList, setSectorsList] = useState([]);
   const [profilesList, setProfilesList] = useState([]);
+
+  useEffect(() => {
+    const closeMenus = (e) => {
+      if (showUserMenu && !e.target.closest('[data-user-menu]')) setShowUserMenu(false);
+    };
+    document.addEventListener("click", closeMenus);
+    return () => document.removeEventListener("click", closeMenus);
+  }, [showUserMenu]);
 
   const notify = (msg, type = "success") => {
     setNotification({ msg, type });
@@ -1067,21 +1067,40 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         allProfiles.forEach(p => { profileMap[p.id] = p.name; });
 
         // Load templates
-        const tplData = await db.query(
-          "checklist_templates",
-          "id,title,moment,schedule,frequency,active,sector_id,responsible_id",
-          { active: "eq.true", unit_id: `eq.${unit.id}` }
-        );
+        let tplData;
+        try {
+          tplData = await db.query(
+            "checklist_templates",
+            "id,title,moment,schedule,frequency,active,sector_id,responsible_id",
+            { active: "eq.true", unit_id: `eq.${unit.id}` }
+          );
+        } catch (e) {
+          // Retry without frequency column
+          console.warn("Templates query failed, retrying without frequency:", e);
+          tplData = await db.query(
+            "checklist_templates",
+            "id,title,moment,schedule,active,sector_id,responsible_id",
+            { active: "eq.true", unit_id: `eq.${unit.id}` }
+          );
+          tplData = tplData.map(t => ({ ...t, frequency: "Diário" }));
+        }
 
         // Load all template items
         const tplIds = tplData.map(t => t.id);
         let allItems = [];
         if (tplIds.length > 0) {
-          allItems = await db.query(
-            "template_items",
-            "id,template_id,text,type,required,photo_required,unit,min_value,max_value,sort_order",
-            { active: "eq.true", order: "sort_order.asc" }
-          );
+          try {
+            allItems = await db.query(
+              "template_items",
+              "id,template_id,text,type,required,photo_required,unit,min_value,max_value,sort_order",
+              { order: "sort_order.asc" }
+            );
+          } catch (e) {
+            console.warn("template_items query failed, trying without order:", e);
+            try {
+              allItems = await db.query("template_items", "id,template_id,text,type,required,photo_required,unit,min_value,max_value,sort_order");
+            } catch (e2) { console.error("template_items failed entirely:", e2); }
+          }
         }
         
         const formattedTemplates = tplData.map(t => ({
@@ -1168,11 +1187,10 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   const todayStr = new Date().toISOString().split("T")[0];
   const todayExecs = executions.filter(e => e.date === todayStr);
-  // Count using templates as baseline (each daily template = 1 expected execution)
-  const dailyTemplates = templates.filter(t => t.frequency === "Diário" || !t.frequency);
+  const dailyTemplates = (templates || []).filter(t => t.frequency === "Diário" || !t.frequency);
   const totalTodayExpected = dailyTemplates.length || todayExecs.length || 1;
   const completedToday = todayExecs.filter(e => e.status === "Concluído").length;
-  const pendingToday = Math.max(0, dailyTemplates.length - todayExecs.length) + todayExecs.filter(e => e.status === "Pendente").length;
+  const pendingToday = Math.max(0, dailyTemplates.length - completedToday);
   const lateToday = todayExecs.filter(e => e.late).length;
   const completionRate = totalTodayExpected > 0 ? Math.round((completedToday / totalTodayExpected) * 100) : 0;
 
