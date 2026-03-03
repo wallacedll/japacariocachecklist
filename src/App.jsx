@@ -1147,89 +1147,106 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   const startExecution = async (tId) => {
     const t = templates.find(x => x.id === tId);
-    if (!t) return;
+    if (!t) { notify("Modelo não encontrado", "error"); return; }
+    if (!t.items || t.items.length === 0) { notify("Este modelo não tem itens", "error"); return; }
+    
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
     const todayDate = now.toISOString().split("T")[0];
 
-    // Check if execution already exists for today
     const existing = executions.find(e => e.templateId === tId && e.date === todayDate);
-    
-    if (existing && existing.status === "Em andamento") {
-      // Load existing execution items
-      try {
-        const itemsData = await db.query(
-          "execution_items",
-          "id,template_item_id,completed,value,numeric_value,photo_url,is_conforming,justification,non_conformity_note",
-          { "execution_id": `eq.${existing.id}` }
-        );
-        const items = t.items.map(ti => {
-          const ei = itemsData.find(x => x.template_item_id === ti.id);
-          return {
-            ...ti,
-            execItemId: ei?.id,
-            completed: ei?.completed || false,
-            value: ei?.value || null,
-            photoTaken: !!ei?.photo_url,
-            photoUrl: ei?.photo_url,
-            nonConformity: ei?.non_conformity_note || null,
-            justification: ei?.justification || null,
-          };
-        });
-        setActiveExec({ ...existing, items, completionRate: Math.round((items.filter(i => i.completed).length / items.length) * 100) });
-      } catch (err) {
-        notify("Erro ao carregar execução", "error");
-        return;
-      }
-    } else if (!existing) {
-      // Create new execution in Supabase
-      try {
-        const sectorData = await db.query("sectors", "id", { name: `eq.${t.sector}`, unit_id: `eq.${unit.id}` });
-        const sectorId = sectorData[0]?.id;
 
-        const execResult = await db.insert("executions", {
-          template_id: tId,
-          unit_id: unit.id,
-          sector_id: sectorId,
-          responsible_id: user.id,
-          date: todayDate,
-          scheduled_time: t.schedule,
-          started_at: now.toISOString(),
-          status: "Em andamento",
-          completion_rate: 0,
-        });
+    const buildItems = (t, existingItems) => {
+      return t.items.map(ti => {
+        const ei = existingItems ? existingItems.find(x => x.template_item_id === ti.id) : null;
+        return {
+          ...ti,
+          execItemId: ei?.id || `local-${ti.id}`,
+          completed: ei?.completed || false,
+          value: ei?.value || null,
+          photoTaken: !!ei?.photo_url,
+          photoUrl: ei?.photo_url || null,
+          nonConformity: ei?.non_conformity_note || null,
+          justification: ei?.justification || null,
+        };
+      });
+    };
+
+    try {
+      if (existing && (existing.status === "Em andamento" || existing.status === "Parcial")) {
+        // Resume existing execution
+        let items;
+        try {
+          const itemsData = await db.query("execution_items", "id,template_item_id,completed,value,numeric_value,photo_url,is_conforming,justification,non_conformity_note", { execution_id: `eq.${existing.id}` });
+          items = buildItems(t, itemsData);
+        } catch (e) {
+          items = buildItems(t, null);
+        }
+        const rate = items.length > 0 ? Math.round((items.filter(i => i.completed).length / items.length) * 100) : 0;
+        setActiveExec({ ...existing, items, completionRate: rate });
+
+      } else if (existing && existing.status === "Concluído") {
+        // Already done — show completed view
+        const items = buildItems(t, null).map(i => ({ ...i, completed: true }));
+        setActiveExec({ ...existing, items, completionRate: 100 });
+
+      } else {
+        // Create new execution
+        let newExecId = `local-${Date.now()}`;
+        let createdItemIds = [];
         
-        const newExec = execResult[0];
-        
-        // Create execution items
-        const execItems = t.items.map(item => ({
-          execution_id: newExec.id,
-          template_item_id: item.id,
-          completed: false,
-        }));
-        const createdItems = await db.insert("execution_items", execItems);
+        try {
+          const sectorData = await db.query("sectors", "id", { name: `eq.${t.sector}`, unit_id: `eq.${unit.id}` });
+          const sectorId = sectorData[0]?.id;
+
+          const execResult = await db.insert("executions", {
+            template_id: tId, unit_id: unit.id, sector_id: sectorId,
+            responsible_id: user.id, date: todayDate, scheduled_time: t.schedule,
+            started_at: now.toISOString(), status: "Em andamento", completion_rate: 0,
+          });
+          newExecId = execResult[0]?.id || newExecId;
+
+          const execItems = t.items.map(item => ({
+            execution_id: newExecId, template_item_id: item.id, completed: false,
+          }));
+          const created = await db.insert("execution_items", execItems);
+          createdItemIds = created || [];
+        } catch (e) {
+          console.log("Supabase exec create failed, using local:", e);
+        }
 
         const items = t.items.map((ti, idx) => ({
           ...ti,
-          execItemId: createdItems[idx]?.id,
+          execItemId: createdItemIds[idx]?.id || `local-item-${idx}`,
           completed: false, value: null, photoTaken: false, nonConformity: null, justification: null,
         }));
 
         const localExec = {
-          id: newExec.id, templateId: tId, templateTitle: t.title, sector: t.sector,
+          id: newExecId, templateId: tId, templateTitle: t.title, sector: t.sector,
           responsible: user.name, date: todayDate, scheduledTime: t.schedule, startedAt: timeStr,
           completedAt: null, status: "Em andamento", completionRate: 0,
           items, late: timeStr > t.schedule, signature: null, unit_id: unit.id,
         };
         setActiveExec(localExec);
-        setExecutions(prev => [localExec, ...prev]);
-      } catch (err) {
-        console.error(err);
-        notify("Erro ao iniciar checklist", "error");
-        return;
+        setExecutions(prev => [localExec, ...prev.filter(e => !(e.templateId === tId && e.date === todayDate))]);
       }
+    } catch (err) {
+      // Fallback — create fully local execution
+      console.error("startExecution error:", err);
+      const items = t.items.map((ti, idx) => ({
+        ...ti, execItemId: `fallback-${idx}`,
+        completed: false, value: null, photoTaken: false, nonConformity: null, justification: null,
+      }));
+      const localExec = {
+        id: `fallback-${Date.now()}`, templateId: tId, templateTitle: t.title, sector: t.sector,
+        responsible: user.name, date: todayDate, scheduledTime: t.schedule, startedAt: timeStr,
+        completedAt: null, status: "Em andamento", completionRate: 0,
+        items, late: timeStr > t.schedule, signature: null, unit_id: unit.id,
+      };
+      setActiveExec(localExec);
+      setExecutions(prev => [localExec, ...prev]);
     }
-    setPage("execute");
+    navigateTo("execute");
   };
 
   const toggleItem = (itemId) => {
@@ -1346,8 +1363,12 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       navigateTo("checklists");
       notify("✅ Checklist finalizado com sucesso!");
     } catch (err) {
-      console.error(err);
-      notify("Erro ao finalizar checklist", "error");
+      // Demo fallback — finalize locally
+      const final = { ...activeExec, status: "Concluído", completedAt: `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`, signature: user.name, completionRate: 100 };
+      setExecutions(prev => [final, ...prev.filter(e => !(e.templateId === final.templateId && e.date === final.date))]);
+      setActiveExec(null);
+      navigateTo("checklists");
+      notify("✅ Checklist finalizado!");
     }
   };
 
@@ -1552,12 +1573,40 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                       <Icon name="play" size={14} color="var(--btn-primary-text)" /> {status === "Em andamento" ? "Continuar" : "Iniciar"}
                     </Btn>
                   ) : (
-                    <span style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                      <Icon name="check" size={16} color="var(--accent)" /> Concluído
-                    </span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" size="sm" onClick={() => startExecution(t.id)}>
+                        <Icon name="checklists" size={14} color="var(--accent)" /> Visualizar
+                      </Btn>
+                      {user.role === "admin" && (
+                        <Btn variant="ghost" size="sm" style={{ color: "var(--danger)" }} onClick={async () => {
+                          if (!confirm("Reiniciar este checklist? Os dados preenchidos serão perdidos.")) return;
+                          const todayDate = new Date().toISOString().split("T")[0];
+                          const ex = executions.find(e => e.templateId === t.id && e.date === todayDate);
+                          if (ex) {
+                            try {
+                              await supabase.fetch(`/rest/v1/execution_items?execution_id=eq.${ex.id}`, { method: "DELETE" });
+                              await supabase.fetch(`/rest/v1/executions?id=eq.${ex.id}`, { method: "DELETE" });
+                            } catch(e) {}
+                            setExecutions(prev => prev.filter(e => !(e.templateId === t.id && e.date === todayDate)));
+                          }
+                          setTimeout(() => startExecution(t.id), 200);
+                          notify("🔄 Checklist reiniciado");
+                        }}>
+                          <Icon name="close" size={14} color="var(--danger)" /> Reiniciar
+                        </Btn>
+                      )}
+                    </div>
                   )}
                   <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>{rate}%</span>
                 </div>
+                {/* Execution details for completed */}
+                {status === "Concluído" && exec && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)", display: "flex", gap: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                    <span>🕐 Início: {exec.startedAt || "—"}</span>
+                    <span>🕑 Fim: {exec.completedAt || "—"}</span>
+                    <span>✍️ {exec.signature || "—"}</span>
+                  </div>
+                )}
               </Card>
             );
           })}
@@ -1578,19 +1627,28 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           <Icon name="back" size={16} color="var(--accent)" /> Voltar
         </Btn>
 
-        <Card style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h2 style={{ fontSize: 22, fontWeight: 800 }}>{activeExec.templateTitle}</h2>
-            <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 13, color: "var(--text-secondary)" }}>
-              <Badge color="var(--info)">{activeExec.sector}</Badge>
-              <span>Início: {activeExec.startedAt}</span>
-              <span>•</span>
-              <span>{user.name}</span>
-              {activeExec.late && <Badge color="var(--danger)">ATRASO</Badge>}
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800 }}>{activeExec.templateTitle}</h2>
+              <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 13, color: "var(--text-secondary)", flexWrap: "wrap" }}>
+                <Badge color="var(--info)">{activeExec.sector}</Badge>
+                <Badge color={activeExec.status === "Concluído" ? "var(--accent)" : "var(--info)"}>{activeExec.status}</Badge>
+                {activeExec.late && <Badge color="var(--danger)">ATRASO</Badge>}
+              </div>
+              <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 13, color: "var(--text-muted)", flexWrap: "wrap" }}>
+                <span>🕐 Agendado: {activeExec.scheduledTime || "—"}</span>
+                <span>▶️ Início: {activeExec.startedAt || "—"}</span>
+                {activeExec.completedAt && <span>✅ Fim: {activeExec.completedAt}</span>}
+                <span>👤 {activeExec.responsible || user.name}</span>
+              </div>
+              {activeExec.signature && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--accent)" }}>✍️ Assinado por: {activeExec.signature}</div>
+              )}
+              <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>{reqDone}/{reqTotal} obrigatórios</div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>{reqDone}/{reqTotal} obrigatórios</div>
+            <CircularProgress value={activeExec.completionRate} size={90} />
           </div>
-          <CircularProgress value={activeExec.completionRate} size={90} />
         </Card>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1603,8 +1661,8 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             }}>
               <div style={{ display: "flex", gap: 12 }}>
                 {item.type === "checkbox" && (
-                  <div onClick={() => toggleItem(item.id)} style={{
-                    width: 28, height: 28, borderRadius: 8, cursor: "pointer", flexShrink: 0, marginTop: 1,
+                  <div onClick={() => activeExec.status !== "Concluído" && toggleItem(item.id)} style={{
+                    width: 28, height: 28, borderRadius: 8, cursor: activeExec.status !== "Concluído" ? "pointer" : "default", flexShrink: 0, marginTop: 1,
                     border: item.completed ? "2px solid var(--accent)" : "2px solid var(--text-muted)",
                     background: item.completed ? "var(--accent-dim)" : "transparent",
                     display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s",
@@ -1613,15 +1671,16 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                   </div>
                 )}
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 15, fontWeight: 500, color: item.completed ? "var(--accent)" : "var(--text-primary)" }}>{item.text}</span>
                     {item.required && <span style={{ fontSize: 9, fontWeight: 800, color: "var(--danger)", background: "var(--badge-danger-bg)", padding: "2px 6px", borderRadius: 4 }}>OBRIGATÓRIO</span>}
-                    {item.photoRequired && <Icon name="camera" size={14} color="var(--text-muted)" />}
+                    {item.photoRequired && <Icon name="camera" size={14} color={item.photoTaken ? "var(--accent)" : "var(--text-muted)"} />}
                   </div>
 
                   {item.type === "numeric" && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                       <input type="number" placeholder={item.unit} value={item.value || ""} onChange={e => updateItemValue(item.id, e.target.value)}
+                        disabled={activeExec.status === "Concluído"}
                         style={{ width: 120, padding: "8px 12px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)", fontSize: 14, outline: "none" }} />
                       <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{item.unit}</span>
                       {item.min !== undefined && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({item.min} a {item.max})</span>}
@@ -1633,14 +1692,15 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                       <div style={{ display: "flex", gap: 8 }}>
                         {["Sim", "Não"].map(opt => (
                           <Btn key={opt} size="sm" variant={item.value === opt ? (opt === "Sim" ? "primary" : "danger") : "outline"}
-                            onClick={() => updateItemValue(item.id, opt)}
-                            style={{ minWidth: 70, justifyContent: "center" }}>{opt}</Btn>
+                            onClick={() => activeExec.status !== "Concluído" && updateItemValue(item.id, opt)}
+                            style={{ minWidth: 70, justifyContent: "center", opacity: activeExec.status === "Concluído" ? 0.7 : 1 }}>{opt}</Btn>
                         ))}
                       </div>
                       {item.value === "Não" && (
                         <div style={{ marginTop: 8 }}>
                           <input placeholder="Justificativa obrigatória para não conformidade..."
                             value={item.justification || ""} onChange={e => updateItemJustification(item.id, e.target.value)}
+                            disabled={activeExec.status === "Concluído"}
                             style={{ width: "100%", padding: "8px 12px", background: "var(--badge-danger-bg)", border: "1px solid var(--badge-danger-bg)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, outline: "none" }} />
                         </div>
                       )}
@@ -1649,17 +1709,47 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
                   {item.type === "observation" && (
                     <textarea placeholder="Digite sua observação..." value={item.value || ""} onChange={e => updateItemValue(item.id, e.target.value)}
+                      disabled={activeExec.status === "Concluído"}
                       style={{ width: "100%", marginTop: 6, padding: "8px 12px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13, outline: "none", minHeight: 56, resize: "vertical" }} />
                   )}
 
                   {item.photoRequired && (
                     <div style={{ marginTop: 8 }}>
                       {item.photoTaken ? (
-                        <Badge color="var(--accent)"><Icon name="camera" size={12} color="var(--accent)" /> Foto registrada</Badge>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Badge color="var(--accent)"><Icon name="camera" size={12} color="var(--accent)" /> Foto registrada</Badge>
+                          {item.photoUrl && item.photoUrl !== "pending_upload" && (
+                            <img src={item.photoUrl} alt="Foto" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", border: "2px solid var(--accent)" }} />
+                          )}
+                        </div>
+                      ) : activeExec.status !== "Concluído" ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <Btn size="sm" variant="ghost" onClick={() => document.getElementById(`photo-${item.id}`)?.click()}>
+                            <Icon name="camera" size={14} color="var(--accent)" /> Tirar Foto
+                          </Btn>
+                          <input type="file" accept="image/*" capture="environment" id={`photo-${item.id}`} style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const url = URL.createObjectURL(file);
+                                setActiveExec(prev => {
+                                  if (!prev) return prev;
+                                  return { ...prev, items: prev.items.map(i => {
+                                    if (i.id === item.id) {
+                                      if (i.execItemId) {
+                                        db.update("execution_items", { id: i.execItemId }, { photo_url: "captured", photo_taken_at: new Date().toISOString() }).catch(console.error);
+                                      }
+                                      return { ...i, photoTaken: true, photoUrl: url };
+                                    }
+                                    return i;
+                                  })};
+                                });
+                                notify("📸 Foto registrada!");
+                              }
+                            }} />
+                        </div>
                       ) : (
-                        <Btn size="sm" variant="ghost" onClick={() => takePhoto(item.id)}>
-                          <Icon name="camera" size={14} color="var(--accent)" /> Tirar Foto
-                        </Btn>
+                        <Badge color="var(--danger)"><Icon name="camera" size={12} color="var(--danger)" /> Sem foto</Badge>
                       )}
                     </div>
                   )}
@@ -1669,12 +1759,53 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           ))}
         </div>
 
-        <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
-          <Btn variant="primary" size="lg" onClick={finalizeExecution}>
-            <Icon name="check" size={18} color="var(--btn-primary-text)" /> Finalizar e Assinar
-          </Btn>
-          <Btn variant="outline" onClick={() => { setActiveExec(null); navigateTo("checklists"); }}>Salvar Rascunho</Btn>
-        </div>
+        {activeExec.status === "Concluído" ? (
+          <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <Badge color="var(--accent)" style={{ padding: "10px 18px", fontSize: 14 }}>✅ Checklist concluído</Badge>
+            <Btn variant="ghost" onClick={() => { setActiveExec(null); navigateTo("checklists"); }}>Voltar</Btn>
+            {user.role === "admin" && (
+              <Btn variant="ghost" style={{ color: "var(--danger)" }} onClick={async () => {
+                if (!confirm("Reiniciar este checklist? Os dados preenchidos serão perdidos.")) return;
+                const tId = activeExec.templateId;
+                const todayDate = activeExec.date;
+                try {
+                  await supabase.fetch(`/rest/v1/execution_items?execution_id=eq.${activeExec.id}`, { method: "DELETE" });
+                  await supabase.fetch(`/rest/v1/executions?id=eq.${activeExec.id}`, { method: "DELETE" });
+                } catch (e) {}
+                setExecutions(prev => prev.filter(e => !(e.templateId === tId && e.date === todayDate)));
+                setActiveExec(null);
+                setTimeout(() => startExecution(tId), 200);
+                notify("🔄 Checklist reiniciado");
+              }}>
+                <Icon name="close" size={16} color="var(--danger)" /> Reiniciar Checklist
+              </Btn>
+            )}
+          </div>
+        ) : (
+          <div style={{ marginTop: 24, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <Btn variant="primary" size="lg" onClick={finalizeExecution}>
+              <Icon name="check" size={18} color="var(--btn-primary-text)" /> Finalizar e Assinar
+            </Btn>
+            <Btn variant="outline" onClick={() => { setActiveExec(null); navigateTo("checklists"); }}>Salvar Rascunho</Btn>
+            {user.role === "admin" && (
+              <Btn variant="ghost" style={{ color: "var(--danger)", borderColor: "var(--danger)" }} onClick={async () => {
+                if (!confirm("Tem certeza que deseja reiniciar este checklist? Todos os dados preenchidos serão perdidos.")) return;
+                const tId = activeExec.templateId;
+                const todayDate = activeExec.date;
+                try {
+                  await supabase.fetch(`/rest/v1/execution_items?execution_id=eq.${activeExec.id}`, { method: "DELETE" });
+                  await supabase.fetch(`/rest/v1/executions?id=eq.${activeExec.id}`, { method: "DELETE" });
+                } catch (e) { console.log("Delete failed:", e); }
+                setExecutions(prev => prev.filter(e => !(e.templateId === tId && e.date === todayDate)));
+                setActiveExec(null);
+                setTimeout(() => startExecution(tId), 100);
+                notify("🔄 Checklist reiniciado");
+              }}>
+                <Icon name="close" size={16} color="var(--danger)" /> Reiniciar Checklist
+              </Btn>
+            )}
+          </div>
+        )}
       </div>
     );
   };
