@@ -338,10 +338,14 @@ const CSS = `
   .theme-switch-anim { animation: themeSwitch 0.5s ease; }
 
   [data-theme="light"] .sidebar-border { border-right: 1px solid rgba(0,0,0,0.06) !important; box-shadow: 2px 0 8px rgba(0,0,0,0.03); }
-  [data-theme="light"] table tr:hover td { background: rgba(5,150,105,0.04) !important; }
+  [data-theme="light"] table tr:hover td { background: rgba(5,150,105,0.06) !important; }
+  [data-theme="light"] table thead th { background: #f1f5f9 !important; color: #64748b !important; }
+  [data-theme="light"] table tbody tr { border-bottom-color: #e2e8f0 !important; }
   [data-theme="light"] input, [data-theme="light"] select, [data-theme="light"] textarea { background: #f8f9fc !important; border-color: rgba(0,0,0,0.12) !important; color: #111827 !important; }
   [data-theme="light"] input::placeholder, [data-theme="light"] textarea::placeholder { color: #6b7280 !important; }
-  [data-theme="dark"] table tr:hover td { background: rgba(45,212,165,0.04) !important; }
+  [data-theme="dark"] table tr:hover td { background: rgba(45,212,165,0.06) !important; }
+  [data-theme="dark"] table thead th { background: var(--bg-elevated) !important; }
+  table tbody tr { transition: background 0.15s ease; }
 
   /* ===== MOBILE RESPONSIVE ===== */
   @media (max-width: 768px) {
@@ -1186,7 +1190,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   }, [unit.id]);
 
   const todayStr = new Date().toISOString().split("T")[0];
-  const todayExecs = executions.filter(e => e.date === todayStr);
+  const todayExecs = (executions || []).filter(e => e.date === todayStr);
   const dailyTemplates = (templates || []).filter(t => t.frequency === "Diário" || !t.frequency);
   const totalTodayExpected = dailyTemplates.length || todayExecs.length || 1;
   const completedToday = todayExecs.filter(e => e.status === "Concluído").length;
@@ -1195,8 +1199,8 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const completionRate = totalTodayExpected > 0 ? Math.round((completedToday / totalTodayExpected) * 100) : 0;
 
   const alerts = [
-    ...todayExecs.filter(e => e.status === "Pendente").map(e => ({ type: "pending", msg: `${e.templateTitle} não iniciado`, time: e.scheduledTime, sector: e.sector })),
-    ...todayExecs.filter(e => e.late).map(e => ({ type: "late", msg: `${e.templateTitle} com atraso`, time: e.startedAt, sector: e.sector })),
+    ...dailyTemplates.filter(t => !todayExecs.find(e => e.templateId === t.id)).map(t => ({ type: "pending", msg: `${t.title} não iniciado`, time: t.schedule, sector: t.sector })),
+    ...todayExecs.filter(e => e.late).map(e => ({ type: "late", msg: `${e.templateTitle || ""} com atraso`, time: e.startedAt || "", sector: e.sector || "" })),
   ];
 
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
@@ -1443,7 +1447,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     { id: "checklists", icon: "checklist", label: "Checklists" },
     { id: "templates", icon: "templates", label: "Modelos" },
     { id: "executions", icon: "reports", label: "Histórico" },
-    { id: "alerts", icon: "alerts", label: "Alertas", count: visibleAlerts.length },
+    { id: "alerts", icon: "alerts", label: "Alertas", count: (visibleAlerts || []).length },
     { id: "users", icon: "users", label: "Equipe" },
     { id: "settings", icon: "settings", label: "Config" },
   ].filter(n => canAccess(n.id));
@@ -2217,28 +2221,41 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         </div>
         <Btn variant="ghost" onClick={() => notify("📥 Exportação em desenvolvimento")}><Icon name="download" size={16} color="var(--accent)" /> Exportar</Btn>
       </div>
-      <Card style={{ overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 4px" }}>
+      <Card style={{ overflow: "auto", padding: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>{["Data","Checklist","Setor","Responsável","Horário","Status","Progresso","Assinatura"].map(h => (
-              <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
-            ))}</tr>
+            <tr style={{ borderBottom: "2px solid var(--border)" }}>
+              {["Data","Checklist","Setor","Responsável","Início","Conclusão","Status","Progresso","Assinatura"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "14px 16px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", background: "var(--bg-surface)" }}>{h}</th>
+              ))}
+            </tr>
           </thead>
           <tbody>
-            {executions.filter(e => filterSector === "Todos" || e.sector === filterSector).slice(0, 40).map(e => (
-              <tr key={e.id}>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: "8px 0 0 8px", fontSize: 13 }}>{e.date.split("-").reverse().join("/")}</td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", fontWeight: 600, fontSize: 13 }}>{e.templateTitle}</td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)" }}><Badge color="var(--info)">{e.sector}</Badge></td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", fontSize: 13 }}>{e.responsible}</td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", fontSize: 13 }}>{e.startedAt} {e.late && <Badge color="var(--danger)" style={{ marginLeft: 4 }}>⚠</Badge>}</td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)" }}><Badge color={e.status === "Concluído" ? "var(--accent)" : e.status === "Em andamento" ? "var(--info)" : "var(--danger)"}>{e.status}</Badge></td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", width: 100 }}><ProgressBar value={e.completionRate} /></td>
-                <td style={{ padding: "12px 14px", background: "var(--bg-elevated)", borderRadius: "0 8px 8px 0", fontSize: 12, color: e.signature ? "var(--accent)" : "var(--text-muted)" }}>{e.signature || "—"}</td>
+            {(executions || []).filter(e => filterSector === "Todos" || e.sector === filterSector).slice(0, 40).map((e, idx) => (
+              <tr key={e.id} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.15s" }}
+                onMouseEnter={ev => ev.currentTarget.style.background = "var(--bg-elevated)"}
+                onMouseLeave={ev => ev.currentTarget.style.background = "transparent"}>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{(e.date || "").split("-").reverse().join("/")}</td>
+                <td style={{ padding: "12px 16px", fontWeight: 600, fontSize: 13 }}>{e.templateTitle}</td>
+                <td style={{ padding: "12px 16px" }}><Badge color="var(--info)">{e.sector}</Badge></td>
+                <td style={{ padding: "12px 16px", fontSize: 13 }}>{e.responsible}</td>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                  {e.startedAt || "—"}
+                  {e.late && <Badge color="var(--danger)" style={{ marginLeft: 6, fontSize: 10 }}>ATRASO</Badge>}
+                </td>
+                <td style={{ padding: "12px 16px", fontSize: 13, color: e.completedAt ? "var(--accent)" : "var(--text-muted)", whiteSpace: "nowrap", fontWeight: e.completedAt ? 600 : 400 }}>
+                  {e.completedAt || "—"}
+                </td>
+                <td style={{ padding: "12px 16px" }}><Badge color={e.status === "Concluído" ? "var(--accent)" : e.status === "Em andamento" ? "var(--info)" : "var(--danger)"}>{e.status}</Badge></td>
+                <td style={{ padding: "12px 16px", width: 100 }}><ProgressBar value={e.completionRate} /></td>
+                <td style={{ padding: "12px 16px", fontSize: 12, color: e.signature ? "var(--accent)" : "var(--text-muted)" }}>{e.signature || "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {(executions || []).length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)", fontSize: 14 }}>Nenhum registro encontrado</div>
+        )}
       </Card>
     </div>
   );
@@ -2626,7 +2643,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     { id: "dashboard", icon: "dashboard", label: "Início" },
     { id: "checklists", icon: "checklists", label: "Checklists" },
     { id: "templates", icon: "templates", label: "Modelos" },
-    { id: "alerts", icon: "alerts", label: "Alertas", count: visibleAlerts.length },
+    { id: "alerts", icon: "alerts", label: "Alertas", count: (visibleAlerts || []).length },
     { id: "more", icon: "menu", label: "Mais" },
   ];
 
@@ -2909,7 +2926,17 @@ export default function App() {
         <ForgotPasswordPage onGoToLogin={() => setAuthState("login")} theme={theme} />
       )}
       {authState === "app" && currentUser && currentUnit && (
-        <MainApp user={currentUser} unit={currentUnit} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />
+        (() => {
+          try {
+            return <MainApp user={currentUser} unit={currentUnit} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />;
+          } catch (err) {
+            return <div style={{ padding: 40, textAlign: "center", color: "#fff", background: "#060b18", minHeight: "100vh" }}>
+              <h2>Erro ao carregar o app</h2>
+              <p style={{ color: "#aaa", marginTop: 10 }}>{String(err)}</p>
+              <button onClick={handleLogout} style={{ marginTop: 20, padding: "10px 24px", background: "#2dd4a5", color: "#000", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Voltar ao Login</button>
+            </div>;
+          }
+        })()
       )}
     </div>
   );
