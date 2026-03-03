@@ -1448,7 +1448,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: isMobile ? 10 : 16, marginBottom: 24 }}>
           {[
             { label: "Conclusão", value: `${completionRate}%`, color: "var(--accent)", icon: "checklist", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); navigateTo("checklists"); } },
-            { label: "Concluídos", value: completedToday, sub: `de ${todayExecs.length}`, color: "var(--info)", icon: "check", action: () => { setFilterStatus("Concluído"); setFilterSector("Todos"); navigateTo("checklists"); } },
+            { label: "Concluídos", value: completedToday, sub: `de ${dailyTemplates.length}`, color: "var(--info)", icon: "check", action: () => { setFilterStatus("Concluído"); setFilterSector("Todos"); navigateTo("checklists"); } },
             { label: "Pendentes", value: pendingToday, color: "var(--warning)", icon: "clock", action: () => { setFilterStatus("Pendente"); setFilterSector("Todos"); navigateTo("checklists"); } },
             { label: "Atrasos", value: lateToday, color: "var(--danger)", icon: "warning", action: () => { setFilterStatus("Todos"); setFilterSector("Todos"); navigateTo("alerts"); } },
           ].map((s, i) => (
@@ -1495,29 +1495,36 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           <Card>
             <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: "var(--text-secondary)" }}>Checklists de Hoje</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {todayExecs.slice(0, 6).map(e => (
-                <div key={e.id} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-                  borderRadius: "var(--radius-md)", background: "var(--bg-elevated)",
-                  cursor: "pointer",
-                }} onClick={() => { 
-                  if (e.status === "Concluído") { 
-                    setFilterStatus("Concluído"); setFilterSector("Todos"); navigateTo("checklists"); 
-                  } else { 
-                    startExecution(e.templateId); 
-                  } 
-                }}>
-                  <div style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: e.status === "Concluído" ? "var(--accent)" : e.status === "Em andamento" ? "var(--info)" : "var(--danger)",
-                  }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{e.templateTitle}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{e.sector} • {e.scheduledTime}</div>
+              {dailyTemplates.map(t => {
+                const exec = todayExecs.find(e => e.templateId === t.id);
+                const status = exec?.status || "Pendente";
+                return (
+                  <div key={t.id} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                    borderRadius: "var(--radius-md)", background: "var(--bg-elevated)",
+                    cursor: "pointer",
+                  }} onClick={() => { 
+                    if (status === "Concluído") { 
+                      startExecution(t.id);
+                    } else { 
+                      startExecution(t.id); 
+                    } 
+                  }}>
+                    <div style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: status === "Concluído" ? "var(--accent)" : status === "Em andamento" ? "var(--info)" : "var(--danger)",
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{t.title}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t.sector} • {t.schedule}</div>
+                    </div>
+                    <Badge color={status === "Concluído" ? "var(--accent)" : status === "Em andamento" ? "var(--info)" : "var(--danger)"}>{status}</Badge>
                   </div>
-                  <Badge color={e.status === "Concluído" ? "var(--accent)" : e.status === "Em andamento" ? "var(--info)" : "var(--danger)"}>{e.status}</Badge>
-                </div>
-              ))}
+                );
+              })}
+              {dailyTemplates.length === 0 && (
+                <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 13 }}>Nenhum checklist diário configurado</div>
+              )}
             </div>
           </Card>
         </div>
