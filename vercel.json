@@ -1,18 +1,7 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
-```
-
-5. Clica em **"Commit changes"**
-
-O arquivo precisa ficar na **raiz** do repositório, no mesmo nível que `package.json` e a pasta `src/`. A estrutura fica assim:
-```
-japa-carioca-checklist/
-├── vercel.json        ← aqui
-├── package.json
-├── src/
-│   └── App.jsx
-├── public/
-└── ...
