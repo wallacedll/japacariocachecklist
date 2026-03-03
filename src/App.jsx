@@ -6,6 +6,22 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 const SUPABASE_URL = "https://fiokvqtvmlnprsywhipj.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpb2t2cXR2bWxucHJzeXdoaXBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MDEzNTEsImV4cCI6MjA4NzM3NzM1MX0.BeWMR2qMqQadfkOz_yVMJ4Bj_zrTMtZCKM0CtKPvUAk";
 
+// Translate Supabase errors to Portuguese
+const translateError = (msg) => {
+  if (!msg) return "Erro desconhecido";
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login")) return "Email ou senha incorretos";
+  if (m.includes("email not confirmed")) return "Email não confirmado. Verifique sua caixa de entrada";
+  if (m.includes("user already registered")) return "Este email já está cadastrado";
+  if (m.includes("email rate limit")) return "Muitas tentativas. Aguarde alguns minutos";
+  if (m.includes("invalid") && m.includes("email")) return "Endereço de email inválido";
+  if (m.includes("password") && m.includes("short")) return "Senha muito curta (mínimo 6 caracteres)";
+  if (m.includes("signup is disabled")) return "Cadastro desativado temporariamente";
+  if (m.includes("rate limit")) return "Muitas tentativas. Aguarde e tente novamente";
+  if (m.includes("network") || m.includes("fetch")) return "Erro de conexão. Verifique sua internet";
+  return msg;
+};
+
 // Minimal Supabase client (no SDK needed)
 const supabase = {
   authToken: null,
@@ -20,7 +36,7 @@ const supabase = {
     };
     const res = await fetch(`${SUPABASE_URL}${path}`, { ...options, headers });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error_description || data.msg || "Erro na requisição");
+    if (!res.ok) throw new Error(translateError(data.message || data.error_description || data.msg) || "Erro na requisição");
     return data;
   },
 
@@ -181,6 +197,8 @@ const icons = {
   shield: "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z",
   sun: "M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z",
   moon: "M10 2c-1.82 0-3.53.5-5 1.35C7.99 5.08 10 8.3 10 12s-2.01 6.92-5 8.65C6.47 21.5 8.18 22 10 22c5.52 0 10-4.48 10-10S15.52 2 10 2z",
+  checklists: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+  history: "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z",
 };
 
 const Icon = ({ name, size = 20, color = "currentColor", style: s }) => (
@@ -685,7 +703,7 @@ const RegisterPage = ({ onGoToLogin, theme }) => {
         body: JSON.stringify({ email: form.email, password: form.password, data: { name: form.name } }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.msg || "Erro ao criar conta");
+      if (!res.ok) throw new Error(translateError(data.message || data.msg) || "Erro ao criar conta");
       
       // Update profile with sector and phone
       if (data.user?.id) {
@@ -817,9 +835,19 @@ const ForgotPasswordPage = ({ onGoToLogin, theme }) => {
               Informe seu email e enviaremos um link para redefinir sua senha.
             </p>
             <Input label="Email" type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
-            <Btn variant="primary" size="lg" onClick={() => setSent(true)} style={{ width: "100%", justifyContent: "center", marginTop: 20 }}>
+            <Btn variant="primary" size="lg" onClick={() => {
+              if (!email || !email.includes("@")) { return; }
+              // Actually call Supabase password reset
+              fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+                method: "POST",
+                headers: { "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+              }).catch(() => {});
+              setSent(true);
+            }} style={{ width: "100%", justifyContent: "center", marginTop: 20, opacity: (!email || !email.includes("@")) ? 0.5 : 1 }}>
               Enviar Link
             </Btn>
+            {!email && <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, textAlign: "center" }}>Informe seu email acima</p>}
           </>
         ) : (
           <div style={{ textAlign: "center" }}>
@@ -893,6 +921,14 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const closeMenus = (e) => {
+      if (showUserMenu && !e.target.closest('[data-user-menu]')) setShowUserMenu(false);
+    };
+    document.addEventListener("click", closeMenus);
+    return () => document.removeEventListener("click", closeMenus);
+  }, [showUserMenu]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1132,10 +1168,13 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   const todayStr = new Date().toISOString().split("T")[0];
   const todayExecs = executions.filter(e => e.date === todayStr);
+  // Count using templates as baseline (each daily template = 1 expected execution)
+  const dailyTemplates = templates.filter(t => t.frequency === "Diário" || !t.frequency);
+  const totalTodayExpected = dailyTemplates.length || todayExecs.length || 1;
   const completedToday = todayExecs.filter(e => e.status === "Concluído").length;
-  const pendingToday = todayExecs.filter(e => e.status === "Pendente").length;
+  const pendingToday = Math.max(0, dailyTemplates.length - todayExecs.length) + todayExecs.filter(e => e.status === "Pendente").length;
   const lateToday = todayExecs.filter(e => e.late).length;
-  const completionRate = todayExecs.length > 0 ? Math.round((completedToday / todayExecs.length) * 100) : 0;
+  const completionRate = totalTodayExpected > 0 ? Math.round((completedToday / totalTodayExpected) * 100) : 0;
 
   const alerts = [
     ...todayExecs.filter(e => e.status === "Pendente").map(e => ({ type: "pending", msg: `${e.templateTitle} não iniciado`, time: e.scheduledTime, sector: e.sector })),
@@ -1174,16 +1213,21 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
     try {
       if (existing && (existing.status === "Em andamento" || existing.status === "Parcial")) {
-        // Resume existing execution
-        let items;
-        try {
-          const itemsData = await db.query("execution_items", "id,template_item_id,completed,value,numeric_value,photo_url,is_conforming,justification,non_conformity_note", { execution_id: `eq.${existing.id}` });
-          items = buildItems(t, itemsData);
-        } catch (e) {
-          items = buildItems(t, null);
+        // Check if we have saved items in memory (from Salvar Rascunho)
+        if (existing.items && existing.items.length > 0) {
+          setActiveExec(existing);
+        } else {
+          // Load from DB
+          let items;
+          try {
+            const itemsData = await db.query("execution_items", "id,template_item_id,completed,value,numeric_value,photo_url,is_conforming,justification,non_conformity_note", { execution_id: `eq.${existing.id}` });
+            items = buildItems(t, itemsData);
+          } catch (e) {
+            items = buildItems(t, null);
+          }
+          const rate = items.length > 0 ? Math.round((items.filter(i => i.completed).length / items.length) * 100) : 0;
+          setActiveExec({ ...existing, items, completionRate: rate });
         }
-        const rate = items.length > 0 ? Math.round((items.filter(i => i.completed).length / items.length) * 100) : 0;
-        setActiveExec({ ...existing, items, completionRate: rate });
 
       } else if (existing && existing.status === "Concluído") {
         // Already done — show completed view
@@ -1255,8 +1299,8 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       const items = prev.items.map(i => {
         if (i.id === itemId) {
           const newCompleted = !i.completed;
-          // Save to Supabase in background
-          if (i.execItemId) {
+          // Only save to DB if real UUID (not local ID)
+          if (i.execItemId && !String(i.execItemId).startsWith("local") && !String(i.execItemId).startsWith("demo") && !String(i.execItemId).startsWith("fallback")) {
             db.update("execution_items", { id: i.execItemId }, { completed: newCompleted, completed_at: newCompleted ? new Date().toISOString() : null }).catch(console.error);
           }
           return { ...i, completed: newCompleted };
@@ -1264,11 +1308,15 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         return i;
       });
       const rate = Math.round((items.filter(i => i.completed).length / items.length) * 100);
-      // Update execution completion rate
-      db.update("executions", { id: prev.id }, { completion_rate: rate }).catch(console.error);
+      // Only update execution if real ID
+      if (!String(prev.id).startsWith("local") && !String(prev.id).startsWith("demo") && !String(prev.id).startsWith("fallback")) {
+        db.update("executions", { id: prev.id }, { completion_rate: rate }).catch(console.error);
+      }
       return { ...prev, items, completionRate: rate };
     });
   };
+
+  const isRealId = (id) => id && !String(id).startsWith("local") && !String(id).startsWith("demo") && !String(id).startsWith("fallback") && !String(id).startsWith("new-");
 
   const updateItemValue = (itemId, value) => {
     setActiveExec(prev => {
@@ -1276,7 +1324,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       return { ...prev, items: prev.items.map(i => {
         if (i.id === itemId) {
           const isNumeric = i.type === "numeric";
-          if (i.execItemId) {
+          if (isRealId(i.execItemId)) {
             db.update("execution_items", { id: i.execItemId }, {
               value: String(value),
               numeric_value: isNumeric ? parseFloat(value) || null : null,
@@ -1298,7 +1346,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       if (!prev) return prev;
       return { ...prev, items: prev.items.map(i => {
         if (i.id === itemId) {
-          if (i.execItemId) {
+          if (isRealId(i.execItemId)) {
             db.update("execution_items", { id: i.execItemId }, { justification: text }).catch(console.error);
           }
           return { ...i, justification: text };
@@ -1309,12 +1357,11 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   };
 
   const takePhoto = (itemId) => {
-    // In PWA version, this will open camera. For now, mark as taken.
     setActiveExec(prev => {
       if (!prev) return prev;
       return { ...prev, items: prev.items.map(i => {
         if (i.id === itemId) {
-          if (i.execItemId) {
+          if (isRealId(i.execItemId)) {
             db.update("execution_items", { id: i.execItemId }, { photo_url: "pending_upload", photo_taken_at: new Date().toISOString() }).catch(console.error);
           }
           return { ...i, photoTaken: true };
@@ -1336,24 +1383,18 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     
     const now = new Date();
     try {
-      // Update execution in Supabase
-      await db.update("executions", { id: activeExec.id }, {
-        status: "Concluído",
-        completed_at: now.toISOString(),
-        completion_rate: 100,
-        signature: user.name,
-        signed_at: now.toISOString(),
-      });
-
-      // Create non-conformity records
-      for (const item of ncItems) {
-        if (item.execItemId) {
-          await db.insert("non_conformities", {
-            execution_id: activeExec.id,
-            execution_item_id: item.execItemId,
-            description: item.nonConformity || "Respondido Não",
-            justification: item.justification,
-          });
+      if (isRealId(activeExec.id)) {
+        await db.update("executions", { id: activeExec.id }, {
+          status: "Concluído", completed_at: now.toISOString(), completion_rate: 100,
+          signature: user.name, signed_at: now.toISOString(),
+        });
+        for (const item of ncItems) {
+          if (isRealId(item.execItemId)) {
+            await db.insert("non_conformities", {
+              execution_id: activeExec.id, execution_item_id: item.execItemId,
+              description: item.nonConformity || "Respondido Não", justification: item.justification,
+            });
+          }
         }
       }
 
@@ -1786,7 +1827,20 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             <Btn variant="primary" size="lg" onClick={finalizeExecution}>
               <Icon name="check" size={18} color="var(--btn-primary-text)" /> Finalizar e Assinar
             </Btn>
-            <Btn variant="outline" onClick={() => { setActiveExec(null); navigateTo("checklists"); }}>Salvar Rascunho</Btn>
+            <Btn variant="outline" onClick={() => {
+              // Save current state to executions list before clearing activeExec
+              if (activeExec) {
+                const saved = { ...activeExec, status: "Em andamento" };
+                setExecutions(prev => [saved, ...prev.filter(e => !(e.templateId === saved.templateId && e.date === saved.date))]);
+                // Also update in DB if real ID
+                if (isRealId(activeExec.id)) {
+                  db.update("executions", { id: activeExec.id }, { completion_rate: activeExec.completionRate, status: "Em andamento" }).catch(console.error);
+                }
+              }
+              setActiveExec(null);
+              navigateTo("checklists");
+              notify("💾 Rascunho salvo");
+            }}>Salvar Rascunho</Btn>
             {user.role === "admin" && (
               <Btn variant="ghost" style={{ color: "var(--danger)", borderColor: "var(--danger)" }} onClick={async () => {
                 if (!confirm("Tem certeza que deseja reiniciar este checklist? Todos os dados preenchidos serão perdidos.")) return;
@@ -2088,7 +2142,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
           {templates.map((t, i) => (
-            <Card key={t.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.05}s both` }}>
+            <Card key={t.id} style={{ animation: `fadeIn 0.3s ease ${i * 0.05}s both`, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                 <Badge color={t.moment === "Abertura" ? "var(--accent)" : "var(--purple)"}>{t.moment}</Badge>
                 <Badge color="var(--info)">{t.sector}</Badge>
@@ -2098,7 +2152,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                 <div style={{ width: 20, height: 20, borderRadius: 6, background: "var(--accent-dim)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Icon name="users" size={11} color="var(--accent)" />
                 </div>
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Responsável: <strong style={{ color: "var(--text-primary)", fontWeight: 600 }}>{t.responsible.split(" ")[0]}</strong></span>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Responsável: <strong style={{ color: "var(--text-primary)", fontWeight: 600 }}>{(t.responsible || "").split(" ")[0]}</strong></span>
               </div>
               <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 14 }}>
                 {t.items.length} itens • {t.items.filter(i => i.required).length} obrigatórios • {t.items.filter(i => i.photoRequired).length} fotos
@@ -2106,7 +2160,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
                 ⏰ {t.schedule} • 📋 {t.frequency} • 👤 {t.responsible}
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
                 {(user.role === "admin" || user.role === "manager") && (
                   <>
                     <Btn size="sm" variant="ghost" onClick={() => {
@@ -2171,6 +2225,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   };
 
   const clearAllAlerts = () => {
+    if (!confirm("Tem certeza que deseja limpar todos os alertas?")) return;
     setDismissedAlerts(alerts.map((_, i) => i));
     notify("Todos os alertas removidos");
   };
@@ -2196,7 +2251,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{a.msg}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{a.sector} • {a.time}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{a.sector}{a.time ? ` • ${a.time}` : ""}</div>
               </div>
               <Badge color={a.type === "late" ? "var(--warning)" : "var(--danger)"}>{a.type === "late" ? "Atraso" : "Pendente"}</Badge>
               {(user.role === "admin" || user.role === "manager") && (
@@ -2230,7 +2285,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
         body: JSON.stringify({ email: newUserForm.email, password: newUserForm.password, data: { name: newUserForm.name } }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.msg || "Erro ao criar usuário");
+      if (!res.ok) throw new Error(translateError(data.message || data.msg) || "Erro ao criar usuário");
 
       if (data.user?.id && supabase.authToken) {
         const sectors = await db.query("sectors", "id", { name: `eq.${newUserForm.sector}`, limit: "1" });
@@ -2530,6 +2585,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       case "execute": return renderExecution();
       case "templates": return renderTemplates();
       case "executions": return renderHistory();
+      case "history": return renderHistory();
       case "alerts": return renderAlerts();
       case "users": return renderUsers();
       case "settings": return renderSettings();
@@ -2626,7 +2682,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                   </div>
                 </div>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--success))", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "var(--logo-text)", cursor: "pointer" }}
-                  onClick={() => setShowUserMenu(!showUserMenu)}>
+                  data-user-menu onClick={() => setShowUserMenu(!showUserMenu)}>
                   {user.avatar}
                 </div>
               </div>
@@ -2653,7 +2709,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                 </div>
                 <div style={{ position: "relative" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 12px", borderRadius: 10, background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-                    onClick={() => setShowUserMenu(!showUserMenu)}>
+                    data-user-menu onClick={() => setShowUserMenu(!showUserMenu)}>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--success))", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "var(--logo-text)" }}>{user.avatar}</div>
                     <div><div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 11, color: "var(--text-muted)" }}>{ROLE_LABELS[user.role]}</div></div>
                     <Icon name="expand" size={16} color="var(--text-muted)" />
