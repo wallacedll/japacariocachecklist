@@ -2318,7 +2318,9 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   };
 
   const [hfCart, setHfCart] = useState({});
-  const [hfTab, setHfTab] = useState("compras"); // compras | relatorio
+  const [hfTab, setHfTab] = useState("compras"); // compras | relatorio | importar
+  const [hfImportResult, setHfImportResult] = useState(null);
+  const [hfImportLoading, setHfImportLoading] = useState(false);
   const [hfOverrideRequested, setHfOverrideRequested] = useState(false);
   const [hfFornecedorPhone, setHfFornecedorPhone] = useState("");
   const [hfFornecedorName, setHfFornecedorName] = useState("Morangão Hortifruti");
@@ -2341,6 +2343,118 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     else { setHfCart(prev => ({ ...prev, [id]: num })); }
   };
 
+  const processHfPdf = async (file) => {
+    setHfImportLoading(true);
+    setHfImportResult(null);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      // Use pdf.js from CDN
+      const pdfjsLib = window.pdfjsLib || await (async () => {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        document.head.appendChild(script);
+        await new Promise(r => { script.onload = r; script.onerror = () => r(); });
+        if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        return window.pdfjsLib;
+      })();
+
+      if (!pdfjsLib) { notify("Erro ao carregar leitor de PDF", "error"); setHfImportLoading(false); return; }
+
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map(item => item.str);
+        fullText += strings.join(" ") + "\n";
+      }
+
+      // Parse the text looking for item patterns
+      const lines = fullText.split("\n").map(l => l.trim()).filter(Boolean);
+      const matched = [];
+      const notMatched = [];
+
+      // Normalize function for matching
+      const normalize = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+
+      // Price patterns: look for R$ XX,XX or XX.XX or just numbers after item names
+      const priceRegex = /R?\$?\s*(\d+)[,.](\d{2})/g;
+
+      // Try to match each known item in the text
+      const fullTextNorm = normalize(fullText);
+      
+      HORTIFRUTI_ITEMS.forEach(item => {
+        const itemNorm = normalize(item.name);
+        const itemWords = itemNorm.split(" ");
+        
+        // Search in each line for the item
+        for (const line of lines) {
+          const lineNorm = normalize(line);
+          // Check if all words of item name appear in the line
+          const allWordsMatch = itemWords.every(w => lineNorm.includes(w));
+          if (!allWordsMatch) continue;
+
+          // Extract prices from this line
+          const prices = [];
+          let m;
+          const lineForPrice = line.replace(/,/g, ".");
+          const priceMatches = [...line.matchAll(/(\d+)[,.](\d{2})/g)];
+          priceMatches.forEach(pm => {
+            const val = parseFloat(pm[1] + "." + pm[2]);
+            if (val > 0.5 && val < 200) prices.push(val);
+          });
+
+          if (prices.length > 0) {
+            // Find the unit price (typically the one that's not the total and closest to known price)
+            let unitPrice = prices[0];
+            if (prices.length >= 2) {
+              // Usually: qty, unit price, total — pick the middle one or the one closest to avgPrice
+              const candidates = prices.filter(p => p > 1 && p < 100);
+              if (candidates.length > 0) {
+                unitPrice = candidates.reduce((best, p) => 
+                  Math.abs(p - item.avgPrice) < Math.abs(best - item.avgPrice) ? p : best
+                , candidates[0]);
+              }
+            }
+
+            // Avoid duplicates
+            if (!matched.find(x => x.name === item.name)) {
+              matched.push({
+                name: item.name,
+                unit: item.unit,
+                oldPrice: item.avgPrice,
+                newPrice: unitPrice,
+              });
+            }
+            return; // Found match, move to next item
+          }
+        }
+      });
+
+      // Collect unmatched lines that look like product entries
+      lines.forEach(line => {
+        if (line.length < 5 || line.length > 100) return;
+        const hasPrice = /\d+[,.]\d{2}/.test(line);
+        const hasUnit = /\b(KG|UN|kg|un|Kg|Un)\b/.test(line);
+        if (hasPrice && hasUnit) {
+          const lineNorm = normalize(line);
+          const isMatched = matched.some(m => lineNorm.includes(normalize(m.name)));
+          if (!isMatched && !notMatched.includes(line)) {
+            notMatched.push(line.slice(0, 80));
+          }
+        }
+      });
+
+      setHfImportResult({ matched, notMatched: notMatched.slice(0, 10) });
+      if (matched.length > 0) notify(`📄 ${matched.length} itens encontrados no PDF`);
+      else notify("Nenhum item reconhecido. Verifique o formato do PDF.", "error");
+    } catch (err) {
+      console.error("PDF import error:", err);
+      notify("Erro ao processar PDF: " + (err.message || "formato inválido"), "error");
+    }
+    setHfImportLoading(false);
+  };
+
   const renderHortifruti = () => {
     const priorityColor = { essencial: "var(--accent)", regular: "var(--info)", pontual: "var(--text-muted)" };
     const priorityLabel = { essencial: "Essencial", regular: "Regular", pontual: "Pontual" };
@@ -2356,7 +2470,8 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gestão de compras de hortifruti — {todayDayName}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant={hfTab === "compras" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("compras")}>🛒 Lista de Compras</Btn>
+            <Btn variant={hfTab === "compras" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("compras")}>🛒 Compras</Btn>
+            <Btn variant={hfTab === "importar" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("importar")}>📄 Importar PDF</Btn>
             <Btn variant={hfTab === "relatorio" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("relatorio")}>📊 Relatório</Btn>
           </div>
         </div>
@@ -2470,6 +2585,119 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
                 <Icon name="whatsapp" size={16} color="#25D366" /> Enviar ao Fornecedor
               </Btn>
             </div>
+          </>
+        )}
+
+        {hfTab === "importar" && (
+          <>
+            <Card style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>📄 Importar Nota Fiscal (PDF)</h3>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+                Faça upload da nota fiscal do fornecedor em PDF. O sistema vai identificar automaticamente os itens e atualizar os preços.
+                Formatos aceitos: nota fiscal com nome do produto, quantidade, unidade e valor.
+              </p>
+
+              <div style={{
+                border: "2px dashed var(--border)", borderRadius: 12, padding: 40,
+                textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+                background: hfImportLoading ? "var(--accent-dim)" : "var(--bg-elevated)",
+              }}
+                onClick={() => !hfImportLoading && document.getElementById("hf-pdf-input")?.click()}
+                onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = "var(--accent)"; }}
+                onDragLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}
+                onDrop={e => {
+                  e.preventDefault();
+                  e.currentTarget.style.borderColor = "var(--border)";
+                  const file = e.dataTransfer.files[0];
+                  if (file && file.type === "application/pdf") processHfPdf(file);
+                  else notify("Selecione um arquivo PDF", "error");
+                }}>
+                {hfImportLoading ? (
+                  <div>
+                    <div style={{ width: 40, height: 40, margin: "0 auto 12px", border: "3px solid var(--accent-dim)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    <p style={{ color: "var(--accent)", fontWeight: 600 }}>Processando PDF...</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                  </div>
+                ) : (
+                  <>
+                    <Icon name="download" size={40} color="var(--text-muted)" />
+                    <p style={{ fontSize: 15, fontWeight: 600, marginTop: 12, color: "var(--text-primary)" }}>Clique ou arraste o PDF aqui</p>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Nota fiscal do fornecedor (.pdf)</p>
+                  </>
+                )}
+              </div>
+              <input type="file" accept=".pdf" id="hf-pdf-input" style={{ display: "none" }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) processHfPdf(f); e.target.value = ""; }} />
+            </Card>
+
+            {/* Import results */}
+            {hfImportResult && (
+              <Card style={{ animation: "fadeIn 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700 }}>✅ Resultado da Importação</h3>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Badge color="var(--accent)">{hfImportResult.matched.length} encontrados</Badge>
+                    {hfImportResult.notMatched.length > 0 && <Badge color="var(--warning)">{hfImportResult.notMatched.length} não identificados</Badge>}
+                  </div>
+                </div>
+
+                {hfImportResult.matched.length > 0 && (
+                  <>
+                    <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                          {["Item", "Un", "Preço Anterior", "Preço Novo", "Variação"].map(h => (
+                            <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", background: "var(--bg-surface)" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hfImportResult.matched.map((m, idx) => {
+                          const diff = m.newPrice - m.oldPrice;
+                          const pct = m.oldPrice > 0 ? ((diff / m.oldPrice) * 100).toFixed(1) : "—";
+                          return (
+                            <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
+                              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{m.name}</td>
+                              <td style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-muted)" }}>{m.unit}</td>
+                              <td style={{ padding: "10px 14px", fontSize: 13 }}>R$ {m.oldPrice.toFixed(2)}</td>
+                              <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: diff > 0 ? "var(--danger)" : diff < 0 ? "var(--accent)" : "var(--text-primary)" }}>R$ {m.newPrice.toFixed(2)}</td>
+                              <td style={{ padding: "10px 14px", fontSize: 12 }}>
+                                <Badge color={diff > 0 ? "var(--danger)" : diff < 0 ? "var(--accent)" : "var(--info)"}>
+                                  {diff > 0 ? "▲" : diff < 0 ? "▼" : "="} {pct}%
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <Btn variant="primary" onClick={() => {
+                        hfImportResult.matched.forEach(m => {
+                          const item = HORTIFRUTI_ITEMS.find(i => i.name.toLowerCase() === m.name.toLowerCase());
+                          if (item) item.avgPrice = m.newPrice;
+                        });
+                        notify(`✅ ${hfImportResult.matched.length} preços atualizados!`);
+                        setHfImportResult(null);
+                      }}>
+                        <Icon name="check" size={16} color="var(--btn-primary-text)" /> Aplicar Novos Preços
+                      </Btn>
+                      <Btn variant="ghost" onClick={() => setHfImportResult(null)}>Descartar</Btn>
+                    </div>
+                  </>
+                )}
+
+                {hfImportResult.notMatched.length > 0 && (
+                  <div style={{ marginTop: 16, padding: 14, borderRadius: 8, background: "var(--badge-danger-bg)" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--warning)", marginBottom: 8 }}>Itens não identificados:</div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                      {hfImportResult.notMatched.map((line, i) => <div key={i}>• {line}</div>)}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            )}
           </>
         )}
 
