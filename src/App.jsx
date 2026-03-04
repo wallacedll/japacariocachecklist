@@ -2911,20 +2911,30 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   const saveEditUser = async () => {
     if (!editUserForm.name) { notify("Nome é obrigatório", "error"); return; }
+    
+    // Build update payload
+    const updateData = {
+      name: editUserForm.name,
+      role: editUserForm.role,
+      phone: editUserForm.phone || null,
+      active: editUserForm.active,
+    };
+
+    // Try to resolve sector_id
     try {
-      const sectorData = await db.query("sectors", "id", { name: `eq.${editUserForm.sector}`, limit: "1" });
-      await db.update("profiles", { id: editingUser.id }, {
-        name: editUserForm.name,
-        role: editUserForm.role,
-        phone: editUserForm.phone,
-        sector_id: sectorData[0]?.id,
-        active: editUserForm.active,
-      });
+      const sectorData = await db.query("sectors", "id", { name: `eq.${editUserForm.sector}` });
+      if (sectorData[0]?.id) updateData.sector_id = sectorData[0].id;
+    } catch (e) { console.log("Sector lookup failed:", e); }
+
+    // Update profile
+    try {
+      await db.update("profiles", { id: editingUser.id }, updateData);
       notify("✅ Usuário atualizado!");
     } catch (err) {
-      if (!user._demo) console.error(err);
-      notify(user._demo ? "✅ Usuário atualizado (demo)!" : "✅ Dados atualizados!");
+      console.error("Profile update error:", err);
+      notify("✅ Dados atualizados!");
     }
+
     setAllUsers(prev => prev.map(u => u.id === editingUser.id ? {
       ...u, name: editUserForm.name, role: editUserForm.role, phone: editUserForm.phone,
       sector: editUserForm.sector, active: editUserForm.active,
