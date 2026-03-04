@@ -156,7 +156,7 @@ const db = {
 // ============================================================
 const AuthContext = createContext(null);
 
-const ROLE_LABELS = { admin: "Administrador", manager: "Gerente", employee: "Funcionário" };
+const ROLE_LABELS = { admin: "Administrador", manager: "Gerente", chef: "Chefe de Cozinha", employee: "Funcionário" };
 const SECTORS = ["Cozinha", "Bar", "Salão", "Caixa", "Estoque", "Gerência"];
 const MOMENTS = ["Abertura", "Fechamento", "Outros"];
 
@@ -199,6 +199,7 @@ const icons = {
   moon: "M10 2c-1.82 0-3.53.5-5 1.35C7.99 5.08 10 8.3 10 12s-2.01 6.92-5 8.65C6.47 21.5 8.18 22 10 22c5.52 0 10-4.48 10-10S15.52 2 10 2z",
   checklists: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
   history: "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z",
+  leaf: "M17.12 2.12c-2.5-1.5-5.5-.5-7 1.5-1 1.5-1.5 3.5-1 5.5-2-1-4.5-1-6.5.5-2 1.5-2.5 4-1.5 6 1 2.5 3.5 4 6 4h.5c2 0 4-.5 5.5-2 1-1 1.5-2.5 2-4 1 .5 2 .5 3 0 2-1 3-3 3-5s-1.5-4.5-4-6.5z",
 };
 
 const Icon = ({ name, size = 20, color = "currentColor", style: s }) => (
@@ -1439,12 +1440,14 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
   const canAccess = (section) => {
     if (user.role === "admin") return true;
     if (user.role === "manager") return true;
+    if (user.role === "chef") return ["dashboard", "checklists", "execute", "hortifruti"].includes(section);
     return ["checklists", "execute"].includes(section);
   };
 
   const navItems = [
     { id: "dashboard", icon: "dashboard", label: "Dashboard" },
     { id: "checklists", icon: "checklist", label: "Checklists" },
+    { id: "hortifruti", icon: "leaf", label: "Hort Frut" },
     { id: "templates", icon: "templates", label: "Modelos" },
     { id: "executions", icon: "reports", label: "Histórico" },
     { id: "alerts", icon: "alerts", label: "Alertas", count: (visibleAlerts || []).length },
@@ -2260,6 +2263,322 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
     </div>
   );
 
+  // ---- HORTIFRUTI ----
+  const HORTIFRUTI_ITEMS = [
+    { id: "hf1", name: "Banana Prata", unit: "KG", avgQty: 2.5, avgPrice: 9.18, priority: "essencial", totalHistoric: 864.04, pctTotal: 11.2 },
+    { id: "hf2", name: "Cebolinha", unit: "UN", avgQty: 4, avgPrice: 3.98, priority: "essencial", totalHistoric: 780.08, pctTotal: 10.1 },
+    { id: "hf3", name: "Pepino Japonês", unit: "KG", avgQty: 2.2, avgPrice: 7.98, priority: "essencial", totalHistoric: 694.67, pctTotal: 9.0 },
+    { id: "hf4", name: "Pimentão Amarelo", unit: "KG", avgQty: 1.3, avgPrice: 16.28, priority: "essencial", totalHistoric: 548.72, pctTotal: 7.1 },
+    { id: "hf5", name: "Maracujá", unit: "KG", avgQty: 2.3, avgPrice: 16.31, priority: "essencial", totalHistoric: 438.42, pctTotal: 5.7 },
+    { id: "hf6", name: "Pimentão Vermelho", unit: "KG", avgQty: 1.1, avgPrice: 16.27, priority: "essencial", totalHistoric: 418.66, pctTotal: 5.4 },
+    { id: "hf7", name: "Limão", unit: "KG", avgQty: 2.3, avgPrice: 4.15, priority: "essencial", totalHistoric: 385.81, pctTotal: 5.0 },
+    { id: "hf8", name: "Morango Bdj", unit: "UN", avgQty: 2, avgPrice: 5.36, priority: "essencial", totalHistoric: 377.48, pctTotal: 4.9 },
+    { id: "hf9", name: "Chuchu", unit: "KG", avgQty: 1.4, avgPrice: 6.98, priority: "regular", totalHistoric: 296.86, pctTotal: 3.8 },
+    { id: "hf10", name: "Alho Descascado", unit: "KG", avgQty: 1.16, avgPrice: 29.98, priority: "pontual", totalHistoric: 279.12, pctTotal: 3.6 },
+    { id: "hf11", name: "Laranja Pera", unit: "KG", avgQty: 2.1, avgPrice: 4.38, priority: "regular", totalHistoric: 264.10, pctTotal: 3.4 },
+    { id: "hf12", name: "Alho Poró", unit: "UN", avgQty: 2, avgPrice: 4.98, priority: "regular", totalHistoric: 230.06, pctTotal: 3.0 },
+    { id: "hf13", name: "Cebola Roxa", unit: "KG", avgQty: 1.1, avgPrice: 9.98, priority: "regular", totalHistoric: 213.50, pctTotal: 2.8 },
+    { id: "hf14", name: "Coentro", unit: "UN", avgQty: 1, avgPrice: 4.90, priority: "regular", totalHistoric: 197.16, pctTotal: 2.5 },
+    { id: "hf15", name: "Manga Palmer", unit: "KG", avgQty: 0.6, avgPrice: 7.31, priority: "pontual", totalHistoric: 174.37, pctTotal: 2.3 },
+    { id: "hf16", name: "Cenoura", unit: "KG", avgQty: 1.0, avgPrice: 6.69, priority: "regular", totalHistoric: 169.28, pctTotal: 2.2 },
+    { id: "hf17", name: "Tomate Carne", unit: "KG", avgQty: 1.0, avgPrice: 6.98, priority: "regular", totalHistoric: 166.92, pctTotal: 2.2 },
+    { id: "hf18", name: "Abacaxi", unit: "UN", avgQty: 1, avgPrice: 10.98, priority: "regular", totalHistoric: 164.68, pctTotal: 2.1 },
+    { id: "hf19", name: "Salsa Crespa", unit: "UN", avgQty: 1, avgPrice: 3.98, priority: "regular", totalHistoric: 139.30, pctTotal: 1.8 },
+    { id: "hf20", name: "Alface Roxa", unit: "UN", avgQty: 1, avgPrice: 4.98, priority: "regular", totalHistoric: 129.48, pctTotal: 1.7 },
+    { id: "hf21", name: "Limão Siciliano", unit: "KG", avgQty: 1.2, avgPrice: 18.98, priority: "pontual", totalHistoric: 85.99, pctTotal: 1.1 },
+    { id: "hf22", name: "Pimentão Verde", unit: "KG", avgQty: 1.0, avgPrice: 10.98, priority: "pontual", totalHistoric: 85.87, pctTotal: 1.1 },
+    { id: "hf23", name: "Repolho Verde", unit: "KG", avgQty: 1.2, avgPrice: 5.31, priority: "regular", totalHistoric: 85.44, pctTotal: 1.1 },
+    { id: "hf24", name: "Repolho Roxo", unit: "KG", avgQty: 1.2, avgPrice: 6.98, priority: "pontual", totalHistoric: 83.34, pctTotal: 1.1 },
+    { id: "hf25", name: "Couve Mineira", unit: "UN", avgQty: 2, avgPrice: 3.98, priority: "regular", totalHistoric: 72.10, pctTotal: 0.9 },
+    { id: "hf26", name: "Cebola Nacional", unit: "KG", avgQty: 1.1, avgPrice: 3.73, priority: "regular", totalHistoric: 68.45, pctTotal: 0.9 },
+    { id: "hf27", name: "Hortelã", unit: "UN", avgQty: 1, avgPrice: 3.98, priority: "pontual", totalHistoric: 64.06, pctTotal: 0.8 },
+    { id: "hf28", name: "Batata Doce", unit: "KG", avgQty: 0.8, avgPrice: 6.98, priority: "pontual", totalHistoric: 37.10, pctTotal: 0.5 },
+    { id: "hf29", name: "Salsa", unit: "UN", avgQty: 1, avgPrice: 3.98, priority: "pontual", totalHistoric: 31.84, pctTotal: 0.4 },
+    { id: "hf30", name: "Batata Lisa", unit: "KG", avgQty: 1.3, avgPrice: 3.98, priority: "pontual", totalHistoric: 29.75, pctTotal: 0.4 },
+    { id: "hf31", name: "Abobrinha Italiana", unit: "KG", avgQty: 0.8, avgPrice: 9.98, priority: "pontual", totalHistoric: 29.20, pctTotal: 0.4 },
+    { id: "hf32", name: "Alho Roxo", unit: "KG", avgQty: 0.9, avgPrice: 27.73, priority: "pontual", totalHistoric: 27.73, pctTotal: 0.4 },
+    { id: "hf33", name: "Alecrim", unit: "UN", avgQty: 1, avgPrice: 3.98, priority: "pontual", totalHistoric: 26.02, pctTotal: 0.3 },
+    { id: "hf34", name: "Maçã Gala", unit: "KG", avgQty: 1.0, avgPrice: 20.68, priority: "pontual", totalHistoric: 20.68, pctTotal: 0.3 },
+    { id: "hf35", name: "Pepino", unit: "KG", avgQty: 1.7, avgPrice: 5.68, priority: "pontual", totalHistoric: 19.68, pctTotal: 0.3 },
+    { id: "hf36", name: "Alho Roxo Descascado", unit: "KG", avgQty: 0.9, avgPrice: 15.73, priority: "pontual", totalHistoric: 15.73, pctTotal: 0.2 },
+    { id: "hf37", name: "Ovos Cartela C/20", unit: "UN", avgQty: 1, avgPrice: 7.98, priority: "pontual", totalHistoric: 7.98, pctTotal: 0.1 },
+    { id: "hf38", name: "Alface Crespa", unit: "UN", avgQty: 1, avgPrice: 3.98, priority: "pontual", totalHistoric: 7.96, pctTotal: 0.1 },
+    { id: "hf39", name: "Brócolis Americano", unit: "UN", avgQty: 1, avgPrice: 5.98, priority: "pontual", totalHistoric: 5.98, pctTotal: 0.1 },
+    { id: "hf40", name: "Berinjela", unit: "KG", avgQty: 0.5, avgPrice: 6.98, priority: "pontual", totalHistoric: 3.63, pctTotal: 0.0 },
+  ];
+
+  const HF_DAILY_METAS = {
+    "Segunda": { avg: 155.03, meta: 139.53, limit: 170.54 },
+    "Terça": { avg: 116.88, meta: 105.20, limit: 128.57 },
+    "Quarta": { avg: 74.39, meta: 66.95, limit: 81.83 },
+    "Quinta": { avg: 104.98, meta: 94.48, limit: 115.48 },
+    "Sexta": { avg: 116.02, meta: 104.41, limit: 127.62 },
+    "Sábado": { avg: 117.76, meta: 105.98, limit: 129.53 },
+    "Domingo": { avg: 60.26, meta: 54.23, limit: 66.28 },
+  };
+
+  const [hfCart, setHfCart] = useState({});
+  const [hfTab, setHfTab] = useState("compras"); // compras | relatorio
+  const [hfOverrideRequested, setHfOverrideRequested] = useState(false);
+  const [hfFornecedorPhone, setHfFornecedorPhone] = useState("");
+  const [hfFornecedorName, setHfFornecedorName] = useState("Morangão Hortifruti");
+
+  const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+  const todayDayName = dayNames[new Date().getDay()];
+  const todayMeta = HF_DAILY_METAS[todayDayName] || { avg: 120, meta: 108, limit: 132 };
+
+  const hfCartTotal = Object.entries(hfCart).reduce((sum, [id, qty]) => {
+    const item = HORTIFRUTI_ITEMS.find(i => i.id === id);
+    return sum + (item ? item.avgPrice * qty : 0);
+  }, 0);
+
+  const isOverLimit = hfCartTotal > todayMeta.limit;
+  const isOverMeta = hfCartTotal > todayMeta.meta;
+
+  const updateHfQty = (id, qty) => {
+    const num = parseFloat(qty) || 0;
+    if (num <= 0) { setHfCart(prev => { const n = { ...prev }; delete n[id]; return n; }); }
+    else { setHfCart(prev => ({ ...prev, [id]: num })); }
+  };
+
+  const renderHortifruti = () => {
+    const priorityColor = { essencial: "var(--accent)", regular: "var(--info)", pontual: "var(--text-muted)" };
+    const priorityLabel = { essencial: "Essencial", regular: "Regular", pontual: "Pontual" };
+
+    return (
+      <div className="animate-fade">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ cursor: "pointer", padding: 6, borderRadius: 10, background: "var(--bg-elevated)" }} onClick={goBack}><Icon name="back" size={18} /></div>
+              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em" }}>🌿 Hort Frut</h1>
+            </div>
+            <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 14 }}>Gestão de compras de hortifruti — {todayDayName}</p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant={hfTab === "compras" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("compras")}>🛒 Lista de Compras</Btn>
+            <Btn variant={hfTab === "relatorio" ? "primary" : "ghost"} size="sm" onClick={() => setHfTab("relatorio")}>📊 Relatório</Btn>
+          </div>
+        </div>
+
+        {hfTab === "compras" && (
+          <>
+            {/* Meta card */}
+            <Card style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 4 }}>Meta de {todayDayName}</div>
+                <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                  <div><span style={{ fontSize: 11, color: "var(--text-muted)" }}>Meta ideal</span><div style={{ fontSize: 20, fontWeight: 800, color: "var(--accent)" }}>R$ {todayMeta.meta.toFixed(2)}</div></div>
+                  <div><span style={{ fontSize: 11, color: "var(--text-muted)" }}>Limite máx.</span><div style={{ fontSize: 20, fontWeight: 800, color: "var(--danger)" }}>R$ {todayMeta.limit.toFixed(2)}</div></div>
+                  <div><span style={{ fontSize: 11, color: "var(--text-muted)" }}>Média histórica</span><div style={{ fontSize: 20, fontWeight: 800, color: "var(--info)" }}>R$ {todayMeta.avg.toFixed(2)}</div></div>
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Total do carrinho</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: isOverLimit ? "var(--danger)" : isOverMeta ? "var(--warning)" : "var(--accent)" }}>
+                  R$ {hfCartTotal.toFixed(2)}
+                </div>
+                {isOverLimit && !hfOverrideRequested && user.role !== "admin" && (
+                  <Badge color="var(--danger)" style={{ marginTop: 4 }}>🔒 Acima do limite!</Badge>
+                )}
+                {isOverLimit && hfOverrideRequested && (
+                  <Badge color="var(--warning)" style={{ marginTop: 4 }}>⏳ Aguardando aprovação</Badge>
+                )}
+                {isOverLimit && user.role === "admin" && (
+                  <Badge color="var(--accent)" style={{ marginTop: 4 }}>✅ Admin — sem bloqueio</Badge>
+                )}
+              </div>
+            </Card>
+
+            {/* Progress bar */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                <span>R$ 0</span><span>Meta: R$ {todayMeta.meta.toFixed(0)}</span><span>Limite: R$ {todayMeta.limit.toFixed(0)}</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: "var(--bg-elevated)", position: "relative", overflow: "hidden" }}>
+                <div style={{ height: "100%", borderRadius: 4, width: `${Math.min(100, (hfCartTotal / todayMeta.limit) * 100)}%`, background: isOverLimit ? "var(--danger)" : isOverMeta ? "var(--warning)" : "var(--accent)", transition: "width 0.3s" }} />
+                <div style={{ position: "absolute", top: 0, bottom: 0, left: `${(todayMeta.meta / todayMeta.limit) * 100}%`, width: 2, background: "var(--accent)" }} />
+              </div>
+            </div>
+
+            {/* Items list */}
+            <Card style={{ padding: 0, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                    {["Item", "Tipo", "Un", "Preço Méd.", "Qtd", "Subtotal"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "12px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", background: "var(--bg-surface)" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {HORTIFRUTI_ITEMS.map(item => {
+                    const qty = hfCart[item.id] || 0;
+                    const subtotal = qty * item.avgPrice;
+                    return (
+                      <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: qty > 0 ? 600 : 400, color: qty > 0 ? "var(--text-primary)" : "var(--text-secondary)" }}>{item.name}</td>
+                        <td style={{ padding: "10px 14px" }}><Badge color={priorityColor[item.priority]}>{priorityLabel[item.priority]}</Badge></td>
+                        <td style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-muted)" }}>{item.unit}</td>
+                        <td style={{ padding: "10px 14px", fontSize: 13 }}>R$ {item.avgPrice.toFixed(2)}</td>
+                        <td style={{ padding: "10px 14px", width: 100 }}>
+                          <input type="number" min="0" step={item.unit === "KG" ? "0.1" : "1"} value={qty || ""} placeholder="0"
+                            onChange={e => updateHfQty(item.id, e.target.value)}
+                            disabled={isOverLimit && user.role !== "admin" && !hfOverrideRequested}
+                            style={{ width: 70, padding: "6px 8px", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", fontSize: 13, textAlign: "center", outline: "none" }} />
+                        </td>
+                        <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, color: subtotal > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+                          {subtotal > 0 ? `R$ ${subtotal.toFixed(2)}` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </Card>
+
+            {/* Action buttons */}
+            <div style={{ marginTop: 20, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {isOverLimit && user.role !== "admin" && !hfOverrideRequested ? (
+                <Btn variant="danger" onClick={() => { setHfOverrideRequested(true); notify("📤 Solicitação enviada ao administrador"); }}>
+                  <Icon name="lock" size={16} color="#fff" /> Solicitar Liberação (Acima do Limite)
+                </Btn>
+              ) : (
+                <Btn variant="primary" onClick={() => {
+                  const items = Object.entries(hfCart).filter(([_, q]) => q > 0).map(([id, qty]) => {
+                    const item = HORTIFRUTI_ITEMS.find(i => i.id === id);
+                    return `${item.name}: ${qty} ${item.unit}`;
+                  });
+                  if (items.length === 0) { notify("Carrinho vazio", "error"); return; }
+                  notify(`✅ Lista de compras salva — ${items.length} itens, R$ ${hfCartTotal.toFixed(2)}`);
+                }}>
+                  <Icon name="check" size={16} color="var(--btn-primary-text)" /> Salvar Lista de Compras
+                </Btn>
+              )}
+              <Btn variant="ghost" onClick={() => { setHfCart({}); setHfOverrideRequested(false); notify("🗑️ Carrinho limpo"); }}>Limpar</Btn>
+              <Btn variant="ghost" style={{ color: "#25D366", borderColor: "#25D366" }} onClick={() => {
+                const items = Object.entries(hfCart).filter(([_, q]) => q > 0).map(([id, qty]) => {
+                  const item = HORTIFRUTI_ITEMS.find(i => i.id === id);
+                  return `• ${item.name}: ${qty} ${item.unit} (~R$ ${(qty * item.avgPrice).toFixed(2)})`;
+                });
+                if (items.length === 0) { notify("Carrinho vazio", "error"); return; }
+                if (!hfFornecedorPhone) { notify("Cadastre o telefone do fornecedor em Equipe → Hort Frut", "error"); return; }
+                const phone = hfFornecedorPhone.replace(/\D/g, "");
+                const msg = `🌿 *JAPA CARIOCA — Lista de Compras Hortifruti*\n📅 ${todayDayName}, ${new Date().toLocaleDateString("pt-BR")}\n\n${items.join("\n")}\n\n💰 *Total estimado: R$ ${hfCartTotal.toFixed(2)}*\n🎯 Meta do dia: R$ ${todayMeta.meta.toFixed(2)}\n\n_Enviado pelo sistema Japa Carioca_`;
+                window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+              }}>
+                <Icon name="whatsapp" size={16} color="#25D366" /> Enviar ao Fornecedor
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {hfTab === "relatorio" && (
+          <>
+            {/* Summary cards */}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+              {[
+                { label: "Total Período", value: "R$ 7.746,16", color: "var(--accent)", icon: "star" },
+                { label: "Média/Dia", value: "R$ 188,93", color: "var(--info)", icon: "reports" },
+                { label: "Notas Fiscais", value: "69", color: "var(--purple)", icon: "templates" },
+                { label: "Itens Distintos", value: "40", color: "var(--warning)", icon: "checklist" },
+              ].map((s, i) => (
+                <Card key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{s.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
+                  </div>
+                  <Icon name={s.icon} size={20} color={s.color} />
+                </Card>
+              ))}
+            </div>
+
+            {/* Metas por dia da semana */}
+            <Card style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>🎯 Metas por Dia da Semana</h3>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                    {["Dia", "Média (R$)", "Meta Ideal (R$)", "Limite Máx. (R$)", "Economia Potencial"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", background: "var(--bg-surface)" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(HF_DAILY_METAS).map(([day, m]) => (
+                    <tr key={day} style={{ borderBottom: "1px solid var(--border)", background: day === todayDayName ? "var(--accent-dim)" : "transparent" }}>
+                      <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: day === todayDayName ? 700 : 400 }}>{day} {day === todayDayName && "← hoje"}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13 }}>R$ {m.avg.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>R$ {m.meta.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, color: "var(--danger)" }}>R$ {m.limit.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, color: "var(--info)" }}>R$ {(m.avg - m.meta).toFixed(2)}/dia</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+
+            {/* Ranking TOP 15 */}
+            <Card style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>🏆 Ranking de Itens — Maior Gasto</h3>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--border)" }}>
+                    {["#", "Item", "Tipo", "Total (R$)", "% do Total"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", background: "var(--bg-surface)" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {HORTIFRUTI_ITEMS.slice(0, 15).map((item, idx) => (
+                    <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>{idx + 1}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>{item.name}</td>
+                      <td style={{ padding: "10px 14px" }}><Badge color={priorityColor[item.priority]}>{priorityLabel[item.priority]}</Badge></td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600 }}>R$ {item.totalHistoric.toFixed(2)}</td>
+                      <td style={{ padding: "10px 14px", width: 120 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--bg-elevated)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${(item.pctTotal / 12) * 100}%`, background: priorityColor[item.priority], borderRadius: 3 }} />
+                          </div>
+                          <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 36 }}>{item.pctTotal}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+
+            {/* Gastos por dia da semana chart */}
+            <Card>
+              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>📅 Gastos por Dia da Semana</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { day: "Segunda", total: 2015.45, pct: 26.0 },
+                  { day: "Sábado", total: 1648.59, pct: 21.3 },
+                  { day: "Sexta", total: 1276.17, pct: 16.5 },
+                  { day: "Terça", total: 935.07, pct: 12.1 },
+                  { day: "Quinta", total: 839.86, pct: 10.8 },
+                  { day: "Quarta", total: 669.48, pct: 8.6 },
+                  { day: "Domingo", total: 361.54, pct: 4.7 },
+                ].map(d => (
+                  <div key={d.day} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 13, width: 70, color: d.day === todayDayName ? "var(--accent)" : "var(--text-secondary)", fontWeight: d.day === todayDayName ? 700 : 400 }}>{d.day}</span>
+                    <div style={{ flex: 1, height: 24, borderRadius: 6, background: "var(--bg-elevated)", overflow: "hidden", position: "relative" }}>
+                      <div style={{ height: "100%", width: `${d.pct * 3.2}%`, background: d.day === todayDayName ? "var(--accent)" : "var(--info)", borderRadius: 6, transition: "width 0.5s" }} />
+                      <span style={{ position: "absolute", right: 8, top: 4, fontSize: 11, fontWeight: 600, color: "var(--text-primary)" }}>R$ {d.total.toFixed(2)} ({d.pct}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </>
+        )}
+      </div>
+    );
+  };
+
   // ---- ALERTS ----
   const dismissAlert = (idx) => {
     setDismissedAlerts(prev => [...prev, idx]);
@@ -2440,7 +2759,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             <Input label="Email" type="email" value={newUserForm.email} onChange={e => setNewUserForm({...newUserForm, email: e.target.value})} placeholder="email@japacarioca.com" />
             <Input label="Senha" type="password" value={newUserForm.password} onChange={e => setNewUserForm({...newUserForm, password: e.target.value})} placeholder="Mínimo 6 caracteres" />
             <Input label="Telefone" value={newUserForm.phone} onChange={e => setNewUserForm({...newUserForm, phone: e.target.value})} placeholder="(21) 99999-0000" />
-            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={newUserForm.role} onChange={e => setNewUserForm({...newUserForm, role: e.target.value})} />
+            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "chef", label: "Chefe de Cozinha"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={newUserForm.role} onChange={e => setNewUserForm({...newUserForm, role: e.target.value})} />
             <Select label="Setor" options={SECTORS} value={newUserForm.sector} onChange={e => setNewUserForm({...newUserForm, sector: e.target.value})} />
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -2461,7 +2780,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
             <Input label="Nome" value={editUserForm.name || ""} onChange={e => setEditUserForm({...editUserForm, name: e.target.value})} />
             <Input label="Email" value={editUserForm.email || ""} disabled style={{ opacity: 0.6 }} />
             <Input label="Telefone" value={editUserForm.phone || ""} onChange={e => setEditUserForm({...editUserForm, phone: e.target.value})} />
-            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={editUserForm.role} onChange={e => setEditUserForm({...editUserForm, role: e.target.value})} />
+            <Select label="Cargo" options={[{value: "employee", label: "Funcionário"}, {value: "chef", label: "Chefe de Cozinha"}, {value: "manager", label: "Gerente"}, {value: "admin", label: "Administrador"}]} value={editUserForm.role} onChange={e => setEditUserForm({...editUserForm, role: e.target.value})} />
             <Select label="Setor" options={SECTORS} value={editUserForm.sector} onChange={e => setEditUserForm({...editUserForm, sector: e.target.value})} />
             <Select label="Status" options={[{value: true, label: "Ativo"}, {value: false, label: "Inativo"}]} value={editUserForm.active} onChange={e => setEditUserForm({...editUserForm, active: e.target.value === "true"})} />
           </div>
@@ -2514,11 +2833,49 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
           </Card>
         ))}
       </div>
+
+      {/* Hort Frut Fornecedor Section - Admin/Manager only */}
+      {(user.role === "admin" || user.role === "manager") && (
+        <Card style={{ marginTop: 24, animation: "fadeIn 0.3s ease" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(37,211,102,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Icon name="whatsapp" size={20} color="#25D366" />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>🌿 Fornecedor Hort Frut</h3>
+              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Cadastre o WhatsApp do fornecedor para envio direto da lista de compras</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Input label="Nome do Fornecedor" value={hfFornecedorName} onChange={e => setHfFornecedorName(e.target.value)} placeholder="Ex: Morangão Hortifruti" />
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Input label="WhatsApp (com DDD)" value={hfFornecedorPhone} onChange={e => setHfFornecedorPhone(e.target.value)} placeholder="21999990000" />
+            </div>
+            <Btn variant="primary" onClick={() => {
+              if (!hfFornecedorPhone) { notify("Informe o telefone", "error"); return; }
+              notify(`✅ Fornecedor salvo: ${hfFornecedorName || "Hort Frut"} — ${hfFornecedorPhone}`);
+            }}>
+              <Icon name="check" size={16} color="var(--btn-primary-text)" /> Salvar
+            </Btn>
+          </div>
+          {hfFornecedorPhone && (
+            <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon name="whatsapp" size={16} color="#25D366" />
+              <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                <strong>{hfFornecedorName || "Fornecedor"}</strong> — {hfFornecedorPhone}
+              </span>
+              <span style={{ fontSize: 11, color: "#25D366", marginLeft: "auto" }}>✓ Ativo</span>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
+  const [unitForm, setUnitForm] = useState({ name: unit.name || "Japa Carioca", address: unit.address || "Rio de Janeiro, RJ", phone: unit.phone || "(21) 3333-1234" });
 
   const [newSector, setNewSector] = useState("");
-  const [unitForm, setUnitForm] = useState({ name: unit.name || "Japa Carioca", address: unit.address || "Rio de Janeiro, RJ", phone: unit.phone || "(21) 3333-1234" });
 
   const addSector = async () => {
     if (!newSector.trim()) { notify("Digite o nome do setor", "error"); return; }
@@ -2628,6 +2985,7 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
       case "templates": return renderTemplates();
       case "executions": return renderHistory();
       case "history": return renderHistory();
+      case "hortifruti": return renderHortifruti();
       case "alerts": return renderAlerts();
       case "users": return renderUsers();
       case "settings": return renderSettings();
@@ -2649,10 +3007,11 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
 
   // "More" menu items
   const moreMenuItems = [
+    { id: "hortifruti", icon: "leaf", label: "Hort Frut" },
     { id: "history", icon: "history", label: "Histórico" },
     { id: "users", icon: "users", label: "Equipe" },
     { id: "settings", icon: "settings", label: "Configurações" },
-  ];
+  ].filter(n => canAccess(n.id));
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", flexDirection: isMobile ? "column" : "row" }}>
