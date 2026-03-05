@@ -499,18 +499,9 @@ const LoginPage = ({ onLogin, onGoToRegister, onGoToForgot, theme, onToggleTheme
       };
       onLogin(user);
     } catch (err) {
-      // Demo mode fallback (when Supabase is unreachable, e.g. in Claude artifacts)
-      const demoUsers = [
-        { id: "demo-1", email: "wallace@japacarioca.com", name: "Wallace", role: "admin", sector: "Gerência", unit_id: "demo-unit" },
-        { id: "demo-2", email: "ana@japacarioca.com", name: "Ana Lima", role: "manager", sector: "Salão", unit_id: "demo-unit" },
-        { id: "demo-3", email: "carlos@japacarioca.com", name: "Carlos Silva", role: "manager", sector: "Cozinha", unit_id: "demo-unit" },
-      ];
-      const demoUser = demoUsers.find(u => u.email === email);
-      if (demoUser) {
-        onLogin({ ...demoUser, avatar: demoUser.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(), phone: "", created_at: "2025-01-01", _demo: true });
-      } else {
-        setError("Email ou senha incorretos");
-      }
+      console.error("Login error:", err);
+      const errMsg = translateError(err.message || "Erro ao conectar");
+      setError(errMsg);
       setLoading(false);
     }
   };
