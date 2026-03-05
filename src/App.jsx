@@ -2565,12 +2565,12 @@ const MainApp = ({ user, unit, onLogout, theme, onToggleTheme }) => {
               <Btn variant="ghost" style={{ color: "#25D366", borderColor: "#25D366" }} onClick={() => {
                 const items = Object.entries(hfCart).filter(([_, q]) => q > 0).map(([id, qty]) => {
                   const item = HORTIFRUTI_ITEMS.find(i => i.id === id);
-                  return `• ${item.name}: ${qty} ${item.unit} (~R$ ${(qty * item.avgPrice).toFixed(2)})`;
+                  return `• ${item.name}: ${qty} ${item.unit}`;
                 });
                 if (items.length === 0) { notify("Carrinho vazio", "error"); return; }
                 if (!hfFornecedorPhone) { notify("Cadastre o telefone do fornecedor em Equipe → Hort Frut", "error"); return; }
                 const phone = hfFornecedorPhone.replace(/\D/g, "");
-                const msg = `🌿 *JAPA CARIOCA — Lista de Compras Hortifruti*\n📅 ${todayDayName}, ${new Date().toLocaleDateString("pt-BR")}\n\n${items.join("\n")}\n\n💰 *Total estimado: R$ ${hfCartTotal.toFixed(2)}*\n🎯 Meta do dia: R$ ${todayMeta.meta.toFixed(2)}\n\n_Enviado pelo sistema Japa Carioca_`;
+                const msg = `🌿 *JAPA CARIOCA — Lista de Compras Hortifruti*\n📅 ${todayDayName}, ${new Date().toLocaleDateString("pt-BR")}\n\n${items.join("\n")}\n\n_Enviado pelo sistema Japa Carioca_`;
                 window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(msg)}`, "_blank");
               }}>
                 <Icon name="whatsapp" size={16} color="#25D366" /> Enviar ao Fornecedor
